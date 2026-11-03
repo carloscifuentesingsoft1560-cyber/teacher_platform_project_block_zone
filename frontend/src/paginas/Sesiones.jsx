@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { ConsultaEjecucionSesion } from '../componentes/ConsultaEjecucionSesion.jsx';
 import { RegistroAsistenciaSesion } from '../componentes/RegistroAsistenciaSesion.jsx';
+import { CierreAsistenciaSesion } from '../componentes/CierreAsistenciaSesion.jsx';
 
 import { solicitar } from '../api/cliente.js';
 
@@ -115,6 +116,9 @@ export function Sesiones() {
     registrandoAsistencia,
     establecerRegistrandoAsistencia,
   ] = useState(false);
+
+  const [cerrandoAsistencia, establecerCerrandoAsistencia] =
+    useState(false);
 
   const intentoCreacion = useRef(null);
   const consultaDetalle = useRef(0);
@@ -236,6 +240,7 @@ export function Sesiones() {
     establecerDetalle(null);
     establecerPlanificando(false);
     establecerRegistrandoAsistencia(false);
+    establecerCerrandoAsistencia(false);
 
     establecerErrorDetalle(null);
     establecerCargandoDetalle(false);
@@ -248,6 +253,7 @@ export function Sesiones() {
     establecerDetalle(null);
     establecerPlanificando(false);
     establecerRegistrandoAsistencia(false);
+    establecerCerrandoAsistencia(false);
 
     establecerErrorDetalle(null);
     establecerCargandoDetalle(true);
@@ -332,6 +338,49 @@ export function Sesiones() {
 
     establecerMensaje(
       'Asistencia guardada. El cierre definitivo está pendiente.'
+    );
+  }
+
+  // F3.3: abrir cierre definitivo.
+  function iniciarCierreAsistencia() {
+    establecerPlanificando(false);
+    establecerRegistrandoAsistencia(false);
+    establecerCerrandoAsistencia(true);
+    establecerErrorDetalle(null);
+    establecerMensaje('');
+  }
+
+  function cerrarFormularioCierre() {
+    establecerCerrandoAsistencia(false);
+  }
+
+  function asistenciaCerrada(resultado) {
+    if (
+      !resultado?.sesion ||
+      !resultado?.asistencia?.cerrada ||
+      !resultado.sesion.asistencia_confirmada
+    ) {
+      establecerCerrandoAsistencia(false);
+      establecerErrorDetalle(
+        new Error(
+          'El cierre no pudo verificarse completamente. ' +
+          'Actualiza el detalle antes de continuar.'
+        )
+      );
+      return;
+    }
+
+    establecerDetalle(resultado.sesion);
+    establecerCerrandoAsistencia(false);
+    establecerRegistrandoAsistencia(false);
+    establecerPlanificando(false);
+    establecerErrorDetalle(null);
+
+    actualizarListado();
+
+    establecerMensaje(
+      'Asistencia cerrada correctamente. ' +
+      'La validación institucional de la sesión continúa separada.'
     );
   }
 
@@ -687,6 +736,7 @@ export function Sesiones() {
           <div className="acciones">
             {!planificando &&
               !registrandoAsistencia &&
+              !cerrandoAsistencia &&
               detalle.estado === 'planificada' && (
                 <button
                   type="button"
@@ -698,6 +748,7 @@ export function Sesiones() {
 
             {!planificando &&
               !registrandoAsistencia &&
+              !cerrandoAsistencia &&
               detalle.estado === 'planificada' &&
               !detalle.asistencia_confirmada && (
                 <button
@@ -705,6 +756,19 @@ export function Sesiones() {
                   onClick={iniciarRegistroAsistencia}
                 >
                   Registrar asistencia
+                </button>
+              )}
+
+            {!planificando &&
+              !registrandoAsistencia &&
+              !cerrandoAsistencia &&
+              detalle.estado === 'planificada' &&
+              !detalle.asistencia_confirmada && (
+                <button
+                  type="button"
+                  onClick={iniciarCierreAsistencia}
+                >
+                  Cerrar asistencia
                 </button>
               )}
 
@@ -750,6 +814,15 @@ export function Sesiones() {
               sesion={detalle}
               onGuardado={asistenciaGuardada}
               onCancelar={cerrarRegistroAsistencia}
+            />
+          )}
+
+          {cerrandoAsistencia && (
+            <CierreAsistenciaSesion
+              key={`cierre-${detalle.id}-${detalle.version}`}
+              sesion={detalle}
+              onCerrado={asistenciaCerrada}
+              onCancelar={cerrarFormularioCierre}
             />
           )}
 
