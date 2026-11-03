@@ -9,6 +9,7 @@ nucleo.register("identidad",IdentidadVista,basename="identidad")
 nucleo.register("personas-institucionales",PersonaVista,basename="personas-institucionales")
 
 urlpatterns = [
+    path("api/", include("sesiones.urls")),
     path("api/recursos/", include("recursos.urls")),
     path("api/curriculo/", include("curriculo.urls")),
     path("api/biblioteca/", include("biblioteca.urls")),
