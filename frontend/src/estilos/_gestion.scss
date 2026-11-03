@@ -1,0 +1,65 @@
+@use 'tokens' as t;
+.gestion { font-size: 1rem; }
+.gestion h1 { font-size: clamp(1.8rem, 3vw, 2.5rem); margin-bottom: 14px; }
+.gestion h2 { margin-bottom: 16px; }
+.gestion h3 { margin-top: 22px; }
+.gestion p { max-width: 78ch; }
+.gestion input, .gestion select, .gestion textarea { width: 100%; min-height: 46px; font: inherit; padding: 10px 12px; border: 1px solid #8298aa; border-radius: 8px; background: white; color: t.$texto; margin: 6px 0 0; }
+.datos-ascenso { border: 0; min-width: 0; padding: 0; }
+.datos-ascenso legend { font-weight: 600; margin-bottom: 12px; }
+.gestion label { font-size: .95rem; font-weight: 600; }
+.gestion button { min-height: 44px; font-size: .95rem; }
+.campo-gestion { display: flex; flex-direction: column; min-width: 0; }
+.gestion .selector-catalogo { min-width: 0; }
+.rejilla-formulario { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.formulario-gestion, .detalle-grupo { background: white; border: 1px solid #c9d5df; padding: 26px; margin: 24px 0; border-radius: 14px; }
+.formulario-gestion { display: block; }
+.formulario-gestion > .campo-gestion { margin-bottom: 20px; }
+.formulario-gestion > button { margin-top: 18px; }
+.formulario-gestion .acciones { margin-top: 24px; }
+.barra-gestion { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin: 24px 0; }
+.barra-gestion .campo-gestion { max-width: 420px; flex: 1; }
+.acciones { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.tabla-contenedor { width: 100%; overflow-x: auto; background: white; border: 1px solid #c9d5df; border-radius: 12px; margin-top: 22px; }
+.gestion table { width: 100%; border-collapse: collapse; text-align: left; font-size: .95rem; }
+.gestion th { background: #e4eef5; color: t.$azul-oscuro; font-weight: 700; }
+.gestion th, .gestion td { padding: 16px; border-bottom: 1px solid #d9e2e9; vertical-align: top; }
+.gestion tbody tr:last-child td { border-bottom: 0; }
+.gestion td.acciones { min-width: 220px; display: table-cell; }
+.gestion td.acciones button { margin: 0 6px 8px 0; }
+.paginacion { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin: 18px 0; }
+.paginacion span { margin-right: auto; }
+.pestanas { display: flex; gap: 12px; flex-wrap: wrap; margin: 28px 0; }
+.campo-checkbox { display: flex; gap: 12px; align-items: center; }
+.gestion .campo-checkbox input { width: 22px; min-height: 22px; height: 22px; margin: 0; }
+.fila-horario { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; border: 1px solid #c9d5df; border-radius: 8px; margin: 16px 0; padding: 18px; }
+.fila-horario legend { padding: 0 8px; font-weight: 600; }
+.fila-horario button { grid-column: 1 / -1; justify-self: start; }
+.aviso { padding: 14px 18px; border-left: 4px solid #167648; background: #e7f6ee; color: #145433; }
+.filtros-calendario { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 18px; }
+.detalle-grupo dl { display: grid; grid-template-columns: minmax(100px, 1fr) 2fr; gap: 8px 20px; }
+.detalle-grupo dd { margin: 0; }
+.detalle-grupo a { display: inline-block; margin-right: 20px; padding-block: 12px; }
+.accesos-panel { display: flex; flex-wrap: wrap; gap: 14px; margin: 24px 0; }
+.accesos-panel a { background: white; border: 1px solid #b4c9d8; padding: 12px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+.recuperacion { max-width: 640px; padding: 32px 24px; margin: 30px auto; }
+.recuperacion .marca { margin-bottom: 40px; }
+.gestion .mensaje-error p { color: inherit; margin: 0; }
+.gestion .mensaje-error { font-size: .95rem; }
+@media (max-width: 800px) {
+  .rejilla-formulario, .fila-horario, .filtros-calendario { grid-template-columns: 1fr; }
+  .barra-gestion { flex-wrap: wrap; }
+  .barra-gestion .campo-gestion { min-width: 100%; }
+  .formulario-gestion, .detalle-grupo { padding: 18px; }
+  .detalle-grupo dl { grid-template-columns: 1fr; }
+  .detalle-grupo dd { margin-bottom: 14px; }
+}
+
+/* Espaciado exclusivo de la columna de deportistas; no cambia el resto de tablas. */
+.deportistas td.acciones .acciones-deportista { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+.deportistas td.acciones .acciones-deportista > a,
+.deportistas td.acciones .acciones-deportista > button { display: inline-flex; align-items: center; min-height: 44px; margin: 0; padding: 10px 12px; white-space: normal; }
+.deportistas .documento-celda { overflow-wrap: anywhere; }
+@media (max-width: 768px) {
+  .deportistas td.acciones .acciones-deportista { flex-direction: column; }
+}

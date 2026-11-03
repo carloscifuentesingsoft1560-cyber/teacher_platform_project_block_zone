@@ -1,0 +1,17 @@
+.contenido-deportivo {
+  max-width: 78rem;
+  article, details { margin-block: 1.5rem; padding: 1rem; border: 1px solid #bac8d6; border-radius: .5rem; }
+  ul, ol { padding-inline-start: 1.5rem; }
+  li { margin-block: .65rem; overflow-wrap: anywhere; }
+  label { display: flex; flex-direction: column; gap: .35rem; margin-block: .7rem; }
+  input, textarea, select, button { min-height: 2.75rem; max-width: 100%; }
+  textarea { min-height: 6rem; resize: vertical; }
+  button, summary { cursor: pointer; }
+  button { margin: .3rem; }
+  small { display: block; }
+  input[type=checkbox] { align-self: flex-start; }
+  :focus-visible { outline: 3px solid #0076bd; outline-offset: 3px; }
+}
+.contenido-formulario { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: .7rem 1.25rem; align-items: start; }
+.contenido-formulario h3 { grid-column: 1 / -1; }
+.contenido-acciones { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }

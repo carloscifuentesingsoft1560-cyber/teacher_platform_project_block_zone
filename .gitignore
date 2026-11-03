@@ -1,0 +1,59 @@
+# Credenciales y configuración local
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+# Referencias privadas, padrones y documentos personales
+docs/referencias/*.xlsx
+docs/referencias/*.xls
+docs/referencias/*.csv
+docs/referencias/*.docx
+docs/referencias/Esquema de la idea*
+datos_privados/
+archivos_privados/
+respaldos/
+*.dump
+*.sql
+*.sqlite3
+*.db
+# Entornos y resultados
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+node_modules/
+dist/
+build/
+.pytest_cache/
+.coverage
+coverage/
+.npm-cache/
+.pip-cache/
+test-results/
+*.log
+.DS_Store
+Thumbs.db
+
+# Todo nuevo documento de referencia se considera privado por defecto.
+docs/referencias/**
+!docs/referencias/PROMPT_MAESTRO_CODEX_ZONA_DE_BLOQUE.md
+backend/staticfiles/
+.venv-local/
+media/
+uploads/
+grabaciones/
+*.pgpass
+pgpass.conf
+*.backup
+*.zip
+*.mp4
+*.mov
+*.avi
+*.xlsx
+*.xls
+*.docx
+*.pdf
