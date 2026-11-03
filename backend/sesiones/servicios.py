@@ -1,7 +1,7 @@
 """Comandos atómicos. Orden de bloqueo: usuarios por PK, grupo, sesión.
 
 Los bloqueos del profesor serializan el límite diario incluso sin sesiones previas.
-No hay endpoints ni ejecución de tareas habilitados en este incremento.
+La API adapta estos comandos; la ejecución HTTP de tareas continúa bloqueada.
 """
 from datetime import date, time
 from zoneinfo import ZoneInfo
@@ -13,7 +13,8 @@ from cuentas.models import Usuario
 from organizacion.models import Grupo, Asignacion
 from organizacion.permisos import puede_gestionar_operacion
 from inscripciones.models import Inscripcion
-from .models import Sesion, PlanSesion, TareaSesion, Asistencia, EventoSesion
+from .models import Sesion, PlanSesion, TareaSesion, Asistencia, EventoSesion, CompetenciaPlan
+from .curricular import resolver_plan, validar_ejercicios
 
 
 class Conflicto(APIException):
@@ -99,11 +100,14 @@ def comandar(*, actor, sesion_id, version, clave, operacion, datos):
         raise Conflicto()
     detalle = {}
     if operacion == 'planificar':
-        if sesion.estado != 'planificada' or set(datos) - {'objetivo', 'tareas', 'malla_version_id', 'clase_id'}:
+        if sesion.estado != 'planificada' or set(datos) - {'objetivo', 'tareas', 'malla_version_id', 'clase_id', 'programa_id', 'fase_curricular_id', 'semana_id', 'competencias_ids'}:
             raise ValidationError('Plan no editable o campos desconocidos.')
         if not datos.get('objetivo', '').strip() or not datos.get('tareas'):
             raise ValidationError('Objetivo y tareas requeridos.')
-        plan = PlanSesion(sesion=sesion, numero=sesion.planes.count()+1, autor=actor, objetivo=datos['objetivo'], malla_version_id=datos.get('malla_version_id'), clase_id=datos.get('clase_id'))
+        referencias, competencias = resolver_plan(actor, grupo, datos)
+        validar_ejercicios(actor, grupo, datos['tareas'])
+        anterior_plan = sesion.planes.order_by('-numero').first()
+        plan = PlanSesion(sesion=sesion, numero=sesion.planes.count()+1, autor=actor, objetivo=datos['objetivo'], revision_anterior=anterior_plan, **referencias)
         plan.full_clean()
         if plan.malla_version_id and (plan.malla_version.estado != 'aprobado' or plan.malla_version.identidad.programa.nivel_id != grupo.nivel_id):
             raise ValidationError('Malla no aprobada o de otro nivel.')
@@ -113,7 +117,7 @@ def comandar(*, actor, sesion_id, version, clave, operacion, datos):
         tareas = []
         fases = []
         for orden, entrada in enumerate(datos['tareas'], 1):
-            if set(entrada) - {'fase', 'minutos', 'instrucciones', 'ejercicio_version_id'}:
+            if set(entrada) - {'fase', 'minutos', 'instrucciones', 'ejercicio_version_id', 'objetivo'}:
                 raise ValidationError('Campos de tarea desconocidos.')
             tarea = TareaSesion(plan=plan, orden=orden, **entrada)
             tarea.full_clean()
@@ -125,6 +129,9 @@ def comandar(*, actor, sesion_id, version, clave, operacion, datos):
         if sum(t.minutos for t in tareas) != minutos or fases != sorted(fases) or set(fases) != {0, 1, 2}:
             raise ValidationError('Las tres fases secuenciales deben completar la duración de la sesión.')
         TareaSesion.objects.bulk_create(tareas)
+        CompetenciaPlan.objects.bulk_create([CompetenciaPlan(plan=plan, competencia=c) for c in competencias])
+        plan.sellado = True
+        plan.save(update_fields=['sellado'])
     elif operacion == 'realizar':
         if sesion.estado != 'planificada' or not sesion.planes.exists() or set(datos) != {'inicio', 'fin'}:
             raise ValidationError('Transición de ejecución inválida.')

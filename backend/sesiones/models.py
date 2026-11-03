@@ -38,6 +38,12 @@ class PlanSesion(models.Model):
     objetivo = models.TextField()
     malla_version = models.ForeignKey('curriculo.MallaVersion', null=True, blank=True, on_delete=models.PROTECT)
     clase = models.ForeignKey('curriculo.ClasePrevista', null=True, blank=True, on_delete=models.PROTECT)
+    programa = models.ForeignKey('curriculo.ProgramaFormativo', null=True, blank=True, on_delete=models.PROTECT)
+    fase_curricular = models.ForeignKey('curriculo.FaseCurricular', null=True, blank=True, on_delete=models.PROTECT)
+    semana = models.ForeignKey('curriculo.SemanaCurricular', null=True, blank=True, on_delete=models.PROTECT)
+    competencias = models.ManyToManyField('curriculo.ElementoCurricular', through='CompetenciaPlan', blank=True)
+    revision_anterior = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='revisiones')
+    sellado = models.BooleanField(default=False, editable=False)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['sesion', 'numero'], name='plan_sesion_numero_unico'), models.CheckConstraint(condition=Q(numero__gte=1), name='plan_numero_positivo')]
@@ -49,11 +55,20 @@ class TareaSesion(models.Model):
     fase = models.CharField(max_length=10, choices=[(x, x) for x in ('inicial', 'central', 'final')])
     minutos = models.PositiveSmallIntegerField()
     instrucciones = models.TextField()
+    objetivo = models.TextField(blank=True)
     ejercicio_version = models.ForeignKey('biblioteca.EjercicioVersion', null=True, blank=True, on_delete=models.PROTECT)
 
     class Meta:
         ordering = ['orden']
         constraints = [models.UniqueConstraint(fields=['plan', 'orden'], name='tarea_plan_orden_unico'), models.CheckConstraint(condition=Q(orden__gte=1, minutos__gte=1), name='tarea_orden_minutos_positivos'), models.CheckConstraint(condition=Q(fase__in=['inicial', 'central', 'final']), name='tarea_fase_valida')]
+
+
+class CompetenciaPlan(models.Model):
+    plan = models.ForeignKey(PlanSesion, on_delete=models.PROTECT)
+    competencia = models.ForeignKey('curriculo.ElementoCurricular', on_delete=models.PROTECT)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['plan', 'competencia'], name='plan_competencia_unica')]
 
 
 class Asistencia(models.Model):

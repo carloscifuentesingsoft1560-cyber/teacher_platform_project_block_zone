@@ -1,18 +1,19 @@
 from django.core.exceptions import ValidationError as ErrorModelo, ObjectDoesNotExist
 from django.db import transaction
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from biblioteca.models import EjercicioVersion
-from curriculo.models import MallaVersion
-from recursos.permisos import versiones_visibles
-from .models import Sesion
+from .models import PlanSesion, TareaSesion
 from .permisos import AccesoSesiones, sesiones_visibles, grupos_disponibles
 from .serializers import CrearSesion, SesionLectura, EditarPlan, CancelarSesion
 from .servicios import crear_sesion, comandar, _usuarios
+from .curricular import programas_grupo, mallas_elegibles, ejercicios_elegibles
+from curriculo.models import FaseCurricular, SemanaCurricular, ClasePrevista, ElementoCurricular
+from rest_framework import serializers
 
 
 class SesionVista(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -21,7 +22,8 @@ class SesionVista(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_queryset(self):
-        datos = sesiones_visibles(self.request.user).prefetch_related('planes__tareas').order_by('-fecha', 'hora_inicio', 'pk')
+        planes = PlanSesion.objects.select_related('malla_version', 'fase_curricular', 'semana', 'clase').order_by('numero').prefetch_related('competencias', Prefetch('tareas', queryset=TareaSesion.objects.select_related('ejercicio_version').order_by('orden')))
+        datos = sesiones_visibles(self.request.user).prefetch_related(Prefetch('planes', queryset=planes)).order_by('-fecha', 'hora_inicio', 'pk')
         grupo = self.request.query_params.get('grupo')
         if grupo is not None:
             if not grupo.isdecimal() or int(grupo) < 1:
@@ -49,15 +51,6 @@ class SesionVista(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         sesion = self.ejecutar(crear_sesion, actor=actor, profesor_id=profesor_id, grupo_id=grupo.pk, **datos)
         return Response(SesionLectura(sesion).data, status=201)
 
-    def validar_contenido(self, actor, datos):
-        malla = datos.get('malla_version_id')
-        if malla and not versiones_visibles(actor, MallaVersion.objects.all(), 'malla').filter(pk=malla).exists():
-            raise ValidationError('Referencia curricular no disponible.')
-        for tarea in datos['tareas']:
-            ejercicio = tarea.get('ejercicio_version_id')
-            if ejercicio and not versiones_visibles(actor, EjercicioVersion.objects.all(), 'ejercicio').filter(pk=ejercicio).exists():
-                raise ValidationError('Referencia de biblioteca no disponible.')
-
     @transaction.atomic
     def cambiar(self, request, tipo, serializador):
         # Recuperación inicial por ámbito antes de leer IDs para bloquear.
@@ -69,8 +62,6 @@ class SesionVista(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         entrada.is_valid(raise_exception=True)
         datos = entrada.validated_data.copy()
         version, clave = datos.pop('version'), datos.pop('clave')
-        if tipo == 'planificar':
-            self.validar_contenido(actor, datos)
         sesion = self.ejecutar(comandar, actor=actor, sesion_id=referencia.pk, version=version, clave=clave, operacion=tipo, datos=datos)
         return Response(SesionLectura(sesion).data)
 
@@ -86,6 +77,48 @@ class SesionVista(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     def realizar(self, request, pk=None):
         self.get_object()
         raise PermissionDenied('Ejecución pendiente del contrato de autorización funcional de actividades.')
+
+    @action(detail=True, methods=['get'], url_path='opciones-plan')
+    def opciones_plan(self, request, pk=None):
+        sesion = self.get_object()
+        grupo = sesion.grupo
+        tipo = request.query_params.get('tipo', 'programas')
+
+        def identificador(nombre, requerido=False):
+            valor = request.query_params.get(nombre)
+            if valor is None and not requerido:
+                return None
+            return serializers.IntegerField(min_value=1).run_validation(valor)
+
+        if tipo == 'programas':
+            datos = programas_grupo(grupo).order_by('pk').values('id', 'uuid', 'nivel_id', 'modalidad')
+        elif tipo == 'versiones':
+            datos = mallas_elegibles(request.user, grupo).order_by('pk').values('id', 'uuid', 'numero', 'identidad_id', 'identidad__nombre', 'identidad__programa_id')
+        elif tipo == 'ejercicios':
+            datos = ejercicios_elegibles(request.user, grupo).order_by('pk').values('id', 'uuid', 'numero', 'nombre', 'objetivo', 'duracion_min', 'duracion_max')
+        elif tipo in ('fases', 'semanas', 'clases', 'competencias'):
+            version = identificador('malla_version', requerido=True)
+            if not mallas_elegibles(request.user, grupo).filter(pk=version).exists():
+                raise ValidationError('Versión curricular no disponible.')
+            if tipo == 'fases':
+                datos = FaseCurricular.objects.filter(version_id=version).order_by('orden').values('id', 'uuid', 'codigo', 'nombre', 'orden')
+            elif tipo == 'semanas':
+                consulta = SemanaCurricular.objects.filter(version_id=version)
+                fase = identificador('fase')
+                if fase:
+                    consulta = consulta.filter(fase_id=fase)
+                datos = consulta.order_by('ordinal').values('id', 'uuid', 'ordinal', 'fase_id')
+            elif tipo == 'clases':
+                consulta = ClasePrevista.objects.filter(semana__version_id=version)
+                semana = identificador('semana')
+                if semana:
+                    consulta = consulta.filter(semana_id=semana)
+                datos = consulta.order_by('ordinal').values('id', 'uuid', 'ordinal', 'semana_id')
+            else:
+                datos = ElementoCurricular.objects.filter(version_id=version, tipo='competencia').order_by('pk').values('id', 'uuid', 'clave_logica', 'texto', 'fase_id', 'semana_id', 'clase_id')
+        else:
+            raise ValidationError({'tipo': 'Selector no disponible.'})
+        return self.get_paginated_response(list(self.paginate_queryset(datos)))
 
     @action(detail=False, methods=['get'])
     def grupos(self, request):
