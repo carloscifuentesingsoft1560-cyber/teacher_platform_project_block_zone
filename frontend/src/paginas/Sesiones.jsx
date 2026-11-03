@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ConsultaEjecucionSesion } from '../componentes/ConsultaEjecucionSesion.jsx';
 import { RegistroAsistenciaSesion } from '../componentes/RegistroAsistenciaSesion.jsx';
 import { CierreAsistenciaSesion } from '../componentes/CierreAsistenciaSesion.jsx';
+import { RegistroEjecucionSesion } from '../componentes/RegistroEjecucionSesion.jsx';
 
 import { solicitar } from '../api/cliente.js';
 
@@ -118,6 +119,9 @@ export function Sesiones() {
   ] = useState(false);
 
   const [cerrandoAsistencia, establecerCerrandoAsistencia] =
+    useState(false);
+
+  const [registrandoEjecucion, establecerRegistrandoEjecucion] =
     useState(false);
 
   const intentoCreacion = useRef(null);
@@ -241,6 +245,7 @@ export function Sesiones() {
     establecerPlanificando(false);
     establecerRegistrandoAsistencia(false);
     establecerCerrandoAsistencia(false);
+    establecerRegistrandoEjecucion(false);
 
     establecerErrorDetalle(null);
     establecerCargandoDetalle(false);
@@ -254,6 +259,7 @@ export function Sesiones() {
     establecerPlanificando(false);
     establecerRegistrandoAsistencia(false);
     establecerCerrandoAsistencia(false);
+    establecerRegistrandoEjecucion(false);
 
     establecerErrorDetalle(null);
     establecerCargandoDetalle(true);
@@ -381,6 +387,51 @@ export function Sesiones() {
     establecerMensaje(
       'Asistencia cerrada correctamente. ' +
       'La validación institucional de la sesión continúa separada.'
+    );
+  }
+
+  // F3.4: registrar ejecución real sin finalizarla.
+  function iniciarRegistroEjecucion() {
+    establecerPlanificando(false);
+    establecerRegistrandoAsistencia(false);
+    establecerCerrandoAsistencia(false);
+    establecerRegistrandoEjecucion(true);
+    establecerErrorDetalle(null);
+    establecerMensaje('');
+  }
+
+  function cerrarRegistroEjecucion() {
+    establecerRegistrandoEjecucion(false);
+  }
+
+  function ejecucionGuardada(resultado) {
+    if (
+      !resultado?.sesion ||
+      resultado.sesion.id !== detalle?.id ||
+      resultado.sesion.version !== detalle.version + 1
+    ) {
+      establecerRegistrandoEjecucion(false);
+      establecerErrorDetalle(
+        new Error(
+          'No se pudo verificar la sesión actualizada. ' +
+          'Consulta nuevamente el detalle.'
+        )
+      );
+      return;
+    }
+
+    establecerDetalle(resultado.sesion);
+    establecerRegistrandoEjecucion(false);
+    establecerPlanificando(false);
+    establecerRegistrandoAsistencia(false);
+    establecerCerrandoAsistencia(false);
+    establecerErrorDetalle(null);
+
+    actualizarListado();
+
+    establecerMensaje(
+      'Ejecución guardada como borrador. ' +
+      'La finalización y la validación institucional siguen pendientes.'
     );
   }
 
@@ -737,6 +788,7 @@ export function Sesiones() {
             {!planificando &&
               !registrandoAsistencia &&
               !cerrandoAsistencia &&
+              !registrandoEjecucion &&
               detalle.estado === 'planificada' && (
                 <button
                   type="button"
@@ -749,6 +801,7 @@ export function Sesiones() {
             {!planificando &&
               !registrandoAsistencia &&
               !cerrandoAsistencia &&
+              !registrandoEjecucion &&
               detalle.estado === 'planificada' &&
               !detalle.asistencia_confirmada && (
                 <button
@@ -762,6 +815,7 @@ export function Sesiones() {
             {!planificando &&
               !registrandoAsistencia &&
               !cerrandoAsistencia &&
+              !registrandoEjecucion &&
               detalle.estado === 'planificada' &&
               !detalle.asistencia_confirmada && (
                 <button
@@ -769,6 +823,22 @@ export function Sesiones() {
                   onClick={iniciarCierreAsistencia}
                 >
                   Cerrar asistencia
+                </button>
+              )}
+
+            {!planificando &&
+              !registrandoAsistencia &&
+              !cerrandoAsistencia &&
+              !registrandoEjecucion &&
+              detalle.estado === 'planificada' &&
+              detalle.estado_ejecucion !==
+                'registrada_pendiente_validacion' &&
+              detalle.planes?.length > 0 && (
+                <button
+                  type="button"
+                  onClick={iniciarRegistroEjecucion}
+                >
+                  Registrar ejecución
                 </button>
               )}
 
@@ -823,6 +893,15 @@ export function Sesiones() {
               sesion={detalle}
               onCerrado={asistenciaCerrada}
               onCancelar={cerrarFormularioCierre}
+            />
+          )}
+
+          {registrandoEjecucion && (
+            <RegistroEjecucionSesion
+              key={`ejecucion-${detalle.id}-${detalle.version}`}
+              sesion={detalle}
+              onGuardado={ejecucionGuardada}
+              onCancelar={cerrarRegistroEjecucion}
             />
           )}
 

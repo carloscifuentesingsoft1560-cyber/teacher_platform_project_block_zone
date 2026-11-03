@@ -68,7 +68,16 @@ class TareaLectura(serializers.ModelSerializer):
 
     class Meta:
         model = TareaSesion
-        fields = ['orden', 'fase', 'minutos', 'objetivo', 'instrucciones', 'ejercicio_version', 'ejercicio_detalle']
+        fields = [
+            'id',
+            'orden',
+            'fase',
+            'minutos',
+            'objetivo',
+            'instrucciones',
+            'ejercicio_version',
+            'ejercicio_detalle',
+        ]
 
 
 class PlanLectura(serializers.ModelSerializer):
