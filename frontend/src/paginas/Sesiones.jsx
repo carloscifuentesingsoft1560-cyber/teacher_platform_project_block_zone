@@ -1,8 +1,11 @@
 
 import { useEffect, useRef, useState } from 'react';
+
 import { ConsultaEjecucionSesion } from '../componentes/ConsultaEjecucionSesion.jsx';
+import { RegistroAsistenciaSesion } from '../componentes/RegistroAsistenciaSesion.jsx';
 
 import { solicitar } from '../api/cliente.js';
+
 import {
   guardar,
   todas,
@@ -78,10 +81,12 @@ export function Sesiones() {
   const [revision, establecerRevision] = useState(0);
 
   const [cargando, establecerCargando] = useState(true);
+
   const [cargandoGrupos, establecerCargandoGrupos] =
     useState(true);
 
   const [error, establecerError] = useState(null);
+
   const [errorGrupos, establecerErrorGrupos] =
     useState(null);
 
@@ -96,6 +101,7 @@ export function Sesiones() {
   const [enviando, establecerEnviando] = useState(false);
 
   const [detalle, establecerDetalle] = useState(null);
+
   const [cargandoDetalle, establecerCargandoDetalle] =
     useState(false);
 
@@ -105,9 +111,15 @@ export function Sesiones() {
   const [planificando, establecerPlanificando] =
     useState(false);
 
+  const [
+    registrandoAsistencia,
+    establecerRegistrandoAsistencia,
+  ] = useState(false);
+
   const intentoCreacion = useRef(null);
   const consultaDetalle = useRef(0);
 
+  // Consultar grupos autorizados.
   useEffect(() => {
     let vigente = true;
 
@@ -142,6 +154,7 @@ export function Sesiones() {
     };
   }, []);
 
+  // Consultar listado de sesiones.
   useEffect(() => {
     let vigente = true;
 
@@ -216,19 +229,26 @@ export function Sesiones() {
     intentoCreacion.current = null;
   }
 
+  // Cerrar la sesión seleccionada y los formularios.
   function cerrarDetalle() {
     consultaDetalle.current += 1;
+
     establecerDetalle(null);
     establecerPlanificando(false);
+    establecerRegistrandoAsistencia(false);
+
     establecerErrorDetalle(null);
     establecerCargandoDetalle(false);
   }
 
+  // Obtener el detalle actualizado.
   async function consultarDetalle(id) {
     const consultaActual = ++consultaDetalle.current;
 
     establecerDetalle(null);
     establecerPlanificando(false);
+    establecerRegistrandoAsistencia(false);
+
     establecerErrorDetalle(null);
     establecerCargandoDetalle(true);
 
@@ -251,7 +271,9 @@ export function Sesiones() {
     }
   }
 
+  // F2: planificación.
   function iniciarPlanificacion() {
+    establecerRegistrandoAsistencia(false);
     establecerPlanificando(true);
     establecerErrorDetalle(null);
   }
@@ -261,12 +283,11 @@ export function Sesiones() {
   }
 
   function planGuardado(sesionActualizada) {
-    // Django devuelve la nueva versión y el historial.
     establecerDetalle(sesionActualizada);
     establecerPlanificando(false);
+    establecerRegistrandoAsistencia(false);
     establecerErrorDetalle(null);
 
-    // Actualizar también la tabla.
     actualizarListado();
 
     establecerMensaje(
@@ -274,6 +295,47 @@ export function Sesiones() {
     );
   }
 
+  // F3.2: abrir registro de asistencia.
+  function iniciarRegistroAsistencia() {
+    establecerPlanificando(false);
+    establecerRegistrandoAsistencia(true);
+    establecerErrorDetalle(null);
+    establecerMensaje('');
+  }
+
+  function cerrarRegistroAsistencia() {
+    establecerRegistrandoAsistencia(false);
+  }
+
+  // F3.2: procesar el guardado confirmado por Django.
+  function asistenciaGuardada(resultado) {
+    if (!resultado?.sesion) {
+      establecerRegistrandoAsistencia(false);
+
+      establecerErrorDetalle(
+        new Error(
+          'No se recibió la sesión actualizada. ' +
+          'Consulta nuevamente el detalle.'
+        )
+      );
+
+      return;
+    }
+
+    establecerDetalle(resultado.sesion);
+
+    establecerRegistrandoAsistencia(false);
+    establecerPlanificando(false);
+    establecerErrorDetalle(null);
+
+    actualizarListado();
+
+    establecerMensaje(
+      'Asistencia guardada. El cierre definitivo está pendiente.'
+    );
+  }
+
+  // F1: creación protegida de sesiones.
   async function crearSesion(evento) {
     evento.preventDefault();
 
@@ -372,8 +434,9 @@ export function Sesiones() {
       <h1>Mis sesiones</h1>
 
       <p>
-        Consulta tus sesiones, crea nuevas sesiones y
-        registra las revisiones de su planificación.
+        Consulta tus sesiones, crea nuevas sesiones,
+        registra las revisiones de su planificación
+        y gestiona la asistencia autorizada.
       </p>
 
       <p className="aviso">
@@ -623,12 +686,25 @@ export function Sesiones() {
 
           <div className="acciones">
             {!planificando &&
+              !registrandoAsistencia &&
               detalle.estado === 'planificada' && (
                 <button
                   type="button"
                   onClick={iniciarPlanificacion}
                 >
                   Planificar sesión
+                </button>
+              )}
+
+            {!planificando &&
+              !registrandoAsistencia &&
+              detalle.estado === 'planificada' &&
+              !detalle.asistencia_confirmada && (
+                <button
+                  type="button"
+                  onClick={iniciarRegistroAsistencia}
+                >
+                  Registrar asistencia
                 </button>
               )}
 
@@ -651,19 +727,31 @@ export function Sesiones() {
             </button>
           </div>
 
+          {/* F2: planificación curricular */}
           {planificando && (
             <PlanificacionSesion
-              key={`${detalle.id}-${detalle.version}`}
+              key={`plan-${detalle.id}-${detalle.version}`}
               sesion={detalle}
               onGuardado={planGuardado}
               onCancelar={cerrarPlanificacion}
             />
           )}
 
+          {/* F3.1: consulta de ejecución y asistencia */}
           <ConsultaEjecucionSesion
-            key={`${detalle.id}-${detalle.version}`}
+            key={`consulta-${detalle.id}-${detalle.version}`}
             sesion={detalle}
           />
+
+          {/* F3.2: registro docente de asistencia */}
+          {registrandoAsistencia && (
+            <RegistroAsistenciaSesion
+              key={`registro-${detalle.id}-${detalle.version}`}
+              sesion={detalle}
+              onGuardado={asistenciaGuardada}
+              onCancelar={cerrarRegistroAsistencia}
+            />
+          )}
 
           <h3>Historial de planificación</h3>
 
