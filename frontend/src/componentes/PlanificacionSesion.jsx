@@ -2,12 +2,22 @@
 import { useRef, useState } from 'react';
 import { guardar } from '../api/gestion.js';
 import { ErrorGestion } from './Gestion.jsx';
+import { ContextoCurricularSesion } from './ContextoCurricularSesion.jsx';
 
 const FASES = [
   { codigo: 'inicial', nombre: 'Fase inicial' },
   { codigo: 'central', nombre: 'Fase central' },
   { codigo: 'final', nombre: 'Fase final' },
 ];
+
+const CURRICULO_VACIO = {
+  programa_id: null,
+  malla_version_id: null,
+  fase_curricular_id: null,
+  semana_id: null,
+  clase_id: null,
+  competencias_ids: [],
+};
 
 function minutosEntre(inicio, fin) {
   if (!inicio || !fin) return 0;
@@ -18,10 +28,10 @@ function minutosEntre(inicio, fin) {
   return hf * 60 + mf - (hi * 60 + mi);
 }
 
-function planVinculado(plan) {
+function tieneReferencias(plan) {
   if (!plan) return false;
 
-  const referencias = [
+  const campos = [
     'programa',
     'malla_version',
     'fase_curricular',
@@ -29,9 +39,7 @@ function planVinculado(plan) {
     'clase',
   ];
 
-  if (referencias.some(
-    (campo) => plan[campo] != null
-  )) {
+  if (campos.some((campo) => plan[campo] != null)) {
     return true;
   }
 
@@ -49,11 +57,12 @@ function estructuraCompatible(plan) {
 
   const tareas = plan.tareas || [];
 
-  if (tareas.length !== FASES.length) return false;
-
-  return tareas.every(
-    (tarea, indice) =>
-      tarea.fase === FASES[indice].codigo
+  return (
+    tareas.length === 3 &&
+    tareas.every(
+      (tarea, indice) =>
+        tarea.fase === FASES[indice].codigo
+    )
   );
 }
 
@@ -76,10 +85,6 @@ function tareasIniciales(sesion) {
 
   const inicial = Math.max(1, Math.floor(total / 4));
   const final = Math.max(1, Math.floor(total / 4));
-  const central = Math.max(
-    1,
-    total - inicial - final
-  );
 
   return [
     {
@@ -90,7 +95,7 @@ function tareasIniciales(sesion) {
     },
     {
       fase: 'central',
-      minutos: String(central),
+      minutos: String(Math.max(1, total - inicial - final)),
       objetivo: '',
       instrucciones: '',
     },
@@ -110,12 +115,14 @@ export function PlanificacionSesion({
 }) {
   const anterior = sesion.planes?.at(-1);
 
-  const bloqueoCurricular = planVinculado(anterior);
+  const bloqueoReferencias = tieneReferencias(anterior);
   const bloqueoEstructura = !estructuraCompatible(anterior);
 
   const editable =
     sesion.estado === 'planificada' &&
-    !bloqueoCurricular &&
+    sesion.estado_ejecucion !==
+      'registrada_pendiente_validacion' &&
+    !bloqueoReferencias &&
     !bloqueoEstructura;
 
   const [objetivo, establecerObjetivo] = useState(
@@ -126,19 +133,29 @@ export function PlanificacionSesion({
     () => tareasIniciales(sesion)
   );
 
-  const [enviando, establecerEnviando] =
+  const [vincularCurriculo, establecerVincularCurriculo] =
     useState(false);
 
-  const [error, establecerError] =
+  const [curriculo, establecerCurriculo] = useState({
+    ...CURRICULO_VACIO,
+  });
+
+  // Solo se autoriza guardar cuando el catálogo vigente
+  // confirma que terminó sin errores.
+  const [estadoCatalogos, establecerEstadoCatalogos] =
     useState(null);
 
-  const [aviso, establecerAviso] =
-    useState('');
+  const [enviando, establecerEnviando] = useState(false);
+  const [error, establecerError] = useState(null);
+  const [aviso, establecerAviso] = useState('');
 
-  const [requiereActualizacion, establecerRequiereActualizacion] =
-    useState(false);
+  const [
+    requiereActualizacion,
+    establecerRequiereActualizacion,
+  ] = useState(false);
 
   const intento = useRef(null);
+  const envioActivo = useRef(false);
 
   const duracion = minutosEntre(
     sesion.hora_inicio,
@@ -153,16 +170,35 @@ export function PlanificacionSesion({
 
   const diferencia = duracion - distribuidos;
 
+  const claveCurricular =
+    `${sesion.id}:${curriculo.malla_version_id || 0}`;
+
+  const catalogosListos =
+    !vincularCurriculo ||
+    (
+      estadoCatalogos?.clave === claveCurricular &&
+      estadoCatalogos?.listo === true
+    );
+
   const bloqueado =
     !editable ||
     enviando ||
     requiereActualizacion;
 
-  function modificarObjetivo(valor) {
-    establecerObjetivo(valor);
+  const guardadoBloqueado =
+    bloqueado ||
+    diferencia !== 0 ||
+    !catalogosListos;
+
+  function invalidarIntento() {
     intento.current = null;
     establecerAviso('');
     establecerError(null);
+  }
+
+  function modificarObjetivo(valor) {
+    establecerObjetivo(valor);
+    invalidarIntento();
   }
 
   function modificarTarea(indice, campo, valor) {
@@ -174,49 +210,43 @@ export function PlanificacionSesion({
       )
     );
 
-    intento.current = null;
-    establecerAviso('');
-    establecerError(null);
+    invalidarIntento();
+  }
+
+  function cambiarVinculacion(marcado) {
+    establecerVincularCurriculo(marcado);
+    establecerCurriculo({ ...CURRICULO_VACIO });
+    establecerEstadoCatalogos(null);
+    invalidarIntento();
+  }
+
+  function cambiarCurriculo(nuevo) {
+    if (nuevo.malla_version_id !== curriculo.malla_version_id) {
+      establecerEstadoCatalogos(null);
+    }
+    establecerCurriculo(nuevo);
+    invalidarIntento();
   }
 
   function validar() {
-    if (sesion.estado !== 'planificada') {
-      return 'La sesión no admite una nueva planificación.';
-    }
-
-    if (bloqueoCurricular) {
-      return (
-        'Esta sesión contiene referencias curriculares ' +
-        'o ejercicios vinculados. La edición básica ' +
-        'no puede conservar esas relaciones.'
-      );
-    }
-
-    if (bloqueoEstructura) {
-      return (
-        'El plan existente tiene una estructura de ' +
-        'actividades que requiere el editor completo.'
-      );
+    if (!editable) {
+      return 'La sesión no permite esta edición.';
     }
 
     if (!objetivo.trim()) {
-      return 'Debes escribir el objetivo general de la sesión.';
+      return 'Debes escribir el objetivo general.';
     }
 
-    if (duracion < 3) {
-      return 'La sesión no tiene duración suficiente.';
+    if (duracion < 3 || tareas.length !== 3) {
+      return 'La duración o las fases no son válidas.';
     }
 
-    if (tareas.length !== FASES.length) {
-      return 'Debes registrar las tres fases.';
-    }
-
-    for (let i = 0; i < FASES.length; i += 1) {
-      const fase = FASES[i];
-      const tarea = tareas[i];
+    for (let indice = 0; indice < 3; indice += 1) {
+      const tarea = tareas[indice];
+      const fase = FASES[indice];
 
       if (tarea.fase !== fase.codigo) {
-        return 'El orden de las fases no es válido.';
+        return 'Las fases deben conservar su orden.';
       }
 
       const minutos = Number(tarea.minutos);
@@ -224,27 +254,44 @@ export function PlanificacionSesion({
       if (
         !tarea.minutos ||
         !Number.isInteger(minutos) ||
-        minutos < 1
+        minutos <= 0
       ) {
-        return (
-          `La ${fase.nombre.toLowerCase()} ` +
-          'necesita una duración válida.'
-        );
+        return `Duración inválida en ${fase.nombre}.`;
       }
 
       if (!tarea.instrucciones.trim()) {
-        return (
-          'Describe las actividades de la ' +
-          fase.nombre.toLowerCase() + '.'
-        );
+        return `Describe las actividades de ${fase.nombre}.`;
       }
     }
 
     if (diferencia !== 0) {
-      return (
-        'Los minutos deben coincidir con ' +
-        'la duración de la sesión.'
-      );
+      return 'Las fases deben completar la duración programada.';
+    }
+
+    if (vincularCurriculo) {
+      if (!catalogosListos) {
+        return (
+          'Espera a que se carguen correctamente ' +
+          'los catálogos curriculares.'
+        );
+      }
+
+      if (
+        !curriculo.programa_id ||
+        !curriculo.malla_version_id
+      ) {
+        return (
+          'Para vincular currículo, selecciona un ' +
+          'programa y una versión de malla.'
+        );
+      }
+
+      if (
+        new Set(curriculo.competencias_ids).size !==
+        curriculo.competencias_ids.length
+      ) {
+        return 'No se permiten competencias repetidas.';
+      }
     }
 
     return null;
@@ -254,9 +301,10 @@ export function PlanificacionSesion({
     evento.preventDefault();
 
     if (
-      enviando ||
+      envioActivo.current ||
       requiereActualizacion ||
-      !editable
+      !editable ||
+      !catalogosListos
     ) {
       return;
     }
@@ -282,24 +330,34 @@ export function PlanificacionSesion({
       })),
     };
 
+    if (vincularCurriculo) {
+      Object.assign(contenido, {
+        programa_id: curriculo.programa_id,
+        malla_version_id: curriculo.malla_version_id,
+        fase_curricular_id: curriculo.fase_curricular_id,
+        semana_id: curriculo.semana_id,
+        clase_id: curriculo.clase_id,
+        competencias_ids: [...curriculo.competencias_ids],
+      });
+    }
+
     const firma = JSON.stringify(contenido);
 
     if (!intento.current) {
       intento.current = {
-        firma,
         clave: crypto.randomUUID(),
+        firma,
       };
     }
 
     if (intento.current.firma !== firma) {
       establecerError(
-        new Error(
-          'El formulario cambió. Consulta la sesión nuevamente.'
-        )
+        new Error('La solicitud cambió. Actualiza la sesión.')
       );
       return;
     }
 
+    envioActivo.current = true;
     establecerEnviando(true);
 
     try {
@@ -313,11 +371,7 @@ export function PlanificacionSesion({
       );
 
       intento.current = null;
-
-      establecerAviso(
-        'La revisión se guardó correctamente.'
-      );
-
+      establecerAviso('Planificación guardada correctamente.');
       onGuardado?.(resultado);
     } catch (fallo) {
       establecerError(fallo);
@@ -331,18 +385,18 @@ export function PlanificacionSesion({
         establecerAviso(
           fallo.estado === 0
             ? (
-                'No se recibió respuesta del servidor. ' +
-                'Consulta el detalle antes de intentar ' +
-                'otra modificación.'
+                'No llegó la respuesta del servidor. ' +
+                'Consulta la sesión antes de reintentar.'
               )
             : (
-                'La operación fue rechazada. Actualiza ' +
-                'la sesión y comprueba sus permisos ' +
-                'y su versión.'
+                'La operación fue rechazada. ' +
+                'Actualiza la sesión y comprueba los datos y permisos ' +
+                'antes de volver a intentarlo.'
               )
         );
       }
     } finally {
+      envioActivo.current = false;
       establecerEnviando(false);
     }
   }
@@ -352,8 +406,8 @@ export function PlanificacionSesion({
       <h2>Planificación de la sesión</h2>
 
       <p>
-        Organiza las fases inicial, central y final.
-        Cada guardado crea una nueva revisión.
+        Define objetivos, actividades y, cuando corresponda,
+        su vinculación con una malla curricular aprobada.
       </p>
 
       <dl>
@@ -370,7 +424,7 @@ export function PlanificacionSesion({
         <dt>Duración</dt>
         <dd>{duracion} minutos</dd>
 
-        <dt>Versión</dt>
+        <dt>Versión de sesión</dt>
         <dd>{sesion.version}</dd>
       </dl>
 
@@ -381,7 +435,15 @@ export function PlanificacionSesion({
         </p>
       )}
 
-      {bloqueoCurricular && (
+      {sesion.estado_ejecucion ===
+        'registrada_pendiente_validacion' && (
+        <p className="mensaje-error" role="alert">
+          La ejecución está finalizada. Su planificación
+          se conserva como historial y no puede modificarse.
+        </p>
+      )}
+
+      {bloqueoReferencias && (
         <p className="mensaje-error" role="alert">
           Esta sesión tiene referencias curriculares,
           competencias o ejercicios asociados.
@@ -391,7 +453,7 @@ export function PlanificacionSesion({
         </p>
       )}
 
-      {bloqueoEstructura && !bloqueoCurricular && (
+      {bloqueoEstructura && !bloqueoReferencias && (
         <p className="mensaje-error" role="alert">
           El plan tiene una estructura distinta a las
           tres fases básicas. Su edición requiere el
@@ -511,19 +573,55 @@ export function PlanificacionSesion({
           </p>
         )}
 
+        <fieldset disabled={bloqueado}>
+          <legend>Contenido curricular</legend>
+
+          <label className="campo-checkbox">
+            <input
+              type="checkbox"
+              checked={vincularCurriculo}
+              onChange={(evento) =>
+                cambiarVinculacion(evento.target.checked)
+              }
+            />
+
+            Vincular esta planificación a una malla curricular
+          </label>
+
+          {vincularCurriculo && (
+            <ContextoCurricularSesion
+              sesionId={sesion.id}
+              valor={curriculo}
+              cambiar={cambiarCurriculo}
+              disabled={bloqueado}
+              onEstadoCambio={establecerEstadoCatalogos}
+            />
+          )}
+        </fieldset>
+
+        {vincularCurriculo && (
+          <p>
+            La malla y las competencias seleccionadas se
+            enviarán a Django para verificar su vigencia
+            y compatibilidad con el grupo.
+          </p>
+        )}
+
+        {vincularCurriculo && !catalogosListos && (
+          <p role="status">
+            El guardado permanecerá bloqueado hasta
+            completar correctamente la consulta curricular.
+          </p>
+        )}
+
         <ErrorGestion error={error} />
 
-        {aviso && (
-          <p role="status">{aviso}</p>
-        )}
+        {aviso && <p role="status">{aviso}</p>}
 
         <div className="acciones">
           <button
             type="submit"
-            disabled={
-              bloqueado ||
-              diferencia !== 0
-            }
+            disabled={guardadoBloqueado}
           >
             {enviando
               ? 'Guardando planificación…'
