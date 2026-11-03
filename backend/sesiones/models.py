@@ -23,7 +23,7 @@ class Sesion(Registro):
         constraints = [
             models.CheckConstraint(condition=Q(hora_fin__gt=F('hora_inicio')), name='sesion_horas_validas'),
             models.CheckConstraint(condition=Q(estado__in=['planificada', 'realizada', 'cancelada']), name='sesion_estado_valido'),
-            models.CheckConstraint(condition=Q(asistencia_confirmada=False) | Q(estado='realizada'), name='sesion_asistencia_realizada'),
+            models.CheckConstraint(condition=Q(asistencia_confirmada=False) | ~Q(estado='cancelada'), name='sesion_asistencia_no_cancelada'),
             models.CheckConstraint(condition=Q(inicio_real__isnull=True, fin_real__isnull=True, estado__in=['planificada', 'cancelada']) | Q(estado='realizada', inicio_real__isnull=False, fin_real__gt=F('inicio_real')), name='sesion_ejecucion_coherente'),
             models.UniqueConstraint(fields=['grupo', 'fecha', 'hora_inicio'], condition=~Q(estado='cancelada'), name='sesion_grupo_franja_unica'),
         ]
@@ -74,11 +74,54 @@ class CompetenciaPlan(models.Model):
 class Asistencia(models.Model):
     sesion = models.ForeignKey(Sesion, on_delete=models.PROTECT, related_name='asistencias')
     inscripcion = models.ForeignKey('inscripciones.Inscripcion', on_delete=models.PROTECT)
+    deportista = models.ForeignKey('deportistas.Deportista', on_delete=models.PROTECT)
     # Vacío significa sin registrar; nunca se interpreta como ausencia.
     estado = models.CharField(max_length=12, blank=True, default='', choices=[(x, x) for x in ('', 'asistio', 'no_asistio', 'tarde', 'excusa', 'retiro')])
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['sesion', 'inscripcion'], name='asistencia_sesion_inscripcion'), models.CheckConstraint(condition=Q(estado__in=['', 'asistio', 'no_asistio', 'tarde', 'excusa', 'retiro']), name='asistencia_estado_valido')]
+        constraints = [models.UniqueConstraint(fields=['sesion', 'inscripcion'], name='asistencia_sesion_inscripcion'), models.UniqueConstraint(fields=['sesion', 'deportista'], name='asistencia_sesion_persona_unica'), models.CheckConstraint(condition=Q(estado__in=['', 'asistio', 'no_asistio', 'tarde', 'excusa', 'retiro']), name='asistencia_estado_valido')]
+
+
+class EjecucionSesion(models.Model):
+    sesion = models.OneToOneField(Sesion, on_delete=models.PROTECT, related_name='ejecucion')
+    plan = models.ForeignKey(PlanSesion, on_delete=models.PROTECT)
+    inicio = models.DateTimeField()
+    fin = models.DateTimeField()
+    observaciones = models.TextField(blank=True)
+    incidencias_pedagogicas = models.TextField(blank=True)
+    creada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    creada_en = models.DateTimeField(auto_now_add=True)
+    finalizada_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    finalizada_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(fin__gt=F('inicio')), name='ejecucion_intervalo_valido'), models.CheckConstraint(condition=Q(finalizada_en__isnull=True, finalizada_por__isnull=True) | Q(finalizada_en__isnull=False, finalizada_por__isnull=False), name='ejecucion_cierre_coherente')]
+
+
+class ActividadEjecutada(models.Model):
+    ejecucion = models.ForeignKey(EjecucionSesion, on_delete=models.PROTECT, related_name='actividades')
+    tarea = models.ForeignKey(TareaSesion, on_delete=models.PROTECT)
+    resultado = models.CharField(max_length=12, choices=[(x,x) for x in ('realizada', 'modificada', 'omitida')])
+    minutos = models.PositiveSmallIntegerField()
+    descripcion = models.TextField(blank=True)
+    adaptacion_metodologica = models.TextField(blank=True)
+    motivo_omision = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['ejecucion', 'tarea'], name='ejecucion_tarea_unica'), models.CheckConstraint(condition=Q(resultado='omitida', minutos=0) | Q(resultado__in=['realizada', 'modificada'], minutos__gte=1), name='actividad_real_resultado_valido')]
+
+
+class CorreccionAsistencia(models.Model):
+    asistencia = models.ForeignKey(Asistencia, on_delete=models.PROTECT, related_name='correcciones')
+    anterior = models.CharField(max_length=12)
+    nuevo = models.CharField(max_length=12)
+    motivo = models.CharField(max_length=500)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    registrada_en = models.DateTimeField(auto_now_add=True)
+    evento = models.OneToOneField('EventoSesion', on_delete=models.PROTECT)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(anterior__in=['asistio', 'no_asistio', 'tarde', 'excusa', 'retiro']) & Q(nuevo__in=['asistio', 'no_asistio', 'tarde', 'excusa', 'retiro']) & ~Q(anterior=F('nuevo')), name='correccion_asistencia_valores')]
 
 
 class EventoSesion(models.Model):

@@ -14,6 +14,10 @@ from .servicios import crear_sesion, comandar, _usuarios
 from .curricular import programas_grupo, mallas_elegibles, ejercicios_elegibles
 from curriculo.models import FaseCurricular, SemanaCurricular, ClasePrevista, ElementoCurricular
 from rest_framework import serializers
+from .ejecucion import operar, datos_asistencia, resumen_asistencia
+from .serializers_ejecucion import GuardarEjecucion, EjecucionLectura, PrepararAsistencia, GuardarAsistencia, CorregirAsistencia
+from .serializers import Comando
+from .models import EjecucionSesion
 
 
 class SesionVista(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -75,8 +79,57 @@ class SesionVista(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
 
     @action(detail=True, methods=['post'])
     def realizar(self, request, pk=None):
-        self.get_object()
-        raise PermissionDenied('Ejecución pendiente del contrato de autorización funcional de actividades.')
+        return self.comando_ejecucion(request, 'validar_realizada', Comando)
+
+    def comando_ejecucion(self, request, operacion, serializador):
+        referencia = self.get_object()
+        entrada = serializador(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data.copy()
+        version, clave = datos.pop('version'), datos.pop('clave')
+        sesion = self.ejecutar(operar, actor=request.user, sesion_id=referencia.pk, version=version, clave=clave, operacion=operacion, datos=datos)
+        return Response(dict(sesion=SesionLectura(sesion).data, asistencia=datos_asistencia(sesion)))
+
+    @action(detail=True, methods=['get', 'post'])
+    def ejecucion(self, request, pk=None):
+        if request.method == 'POST':
+            return self.comando_ejecucion(request, 'guardar_ejecucion', GuardarEjecucion)
+        sesion = self.get_object()
+        ejecucion = get_object_or_404(EjecucionSesion.objects.select_related('plan').prefetch_related('actividades'), sesion=sesion)
+        return Response(dict(version=sesion.version, ejecucion=EjecucionLectura(ejecucion).data))
+
+    @action(detail=True, methods=['post'], url_path='ejecucion/finalizar')
+    def finalizar_ejecucion(self, request, pk=None):
+        return self.comando_ejecucion(request, 'finalizar_ejecucion', Comando)
+
+    @action(detail=True, methods=['get'])
+    def participantes(self, request, pk=None):
+        return Response(datos_asistencia(self.get_object()))
+
+    @action(detail=True, methods=['get', 'post'])
+    def asistencia(self, request, pk=None):
+        if request.method == 'POST':
+            return self.comando_ejecucion(request, 'guardar_asistencia', GuardarAsistencia)
+        sesion = self.get_object()
+        datos = datos_asistencia(sesion)
+        datos['correcciones'] = list(sesion.asistencias.filter(correcciones__isnull=False).values('correcciones__id', 'deportista_id', 'inscripcion_id', 'correcciones__anterior', 'correcciones__nuevo', 'correcciones__motivo', 'correcciones__actor_id', 'correcciones__registrada_en', 'correcciones__evento_id').order_by('correcciones__id'))
+        return Response(datos)
+
+    @action(detail=True, methods=['post'], url_path='asistencia/preparar')
+    def preparar_asistencia(self, request, pk=None):
+        return self.comando_ejecucion(request, 'preparar_asistencia', PrepararAsistencia)
+
+    @action(detail=True, methods=['post'], url_path='asistencia/cerrar')
+    def cerrar_asistencia(self, request, pk=None):
+        return self.comando_ejecucion(request, 'cerrar_asistencia', Comando)
+
+    @action(detail=True, methods=['post'], url_path='asistencia/corregir')
+    def corregir_asistencia(self, request, pk=None):
+        return self.comando_ejecucion(request, 'corregir_asistencia', CorregirAsistencia)
+
+    @action(detail=True, methods=['get'], url_path='asistencia/resumen')
+    def resumen_asistencia(self, request, pk=None):
+        return Response(resumen_asistencia(self.get_object()))
 
     @action(detail=True, methods=['get'], url_path='opciones-plan')
     def opciones_plan(self, request, pk=None):

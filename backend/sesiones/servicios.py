@@ -4,10 +4,8 @@ Los bloqueos del profesor serializan el límite diario incluso sin sesiones prev
 La API adapta estos comandos; la ejecución HTTP de tareas continúa bloqueada.
 """
 from datetime import date, time
-from zoneinfo import ZoneInfo
 from django.db import transaction
 from django.db.models import Q
-from django.utils import timezone
 from rest_framework.exceptions import ValidationError, PermissionDenied, APIException
 from cuentas.models import Usuario
 from organizacion.models import Grupo, Asignacion
@@ -79,7 +77,7 @@ def crear_sesion(*, actor, clave, grupo_id, profesor_id, fecha, hora_inicio, hor
     sesion = Sesion.objects.create(grupo=grupo, profesor=profesor, fecha=fecha, hora_inicio=inicio, hora_fin=fin, creado_por=actor, actualizado_por=actor)
     # Padrón histórico por intervalo [ingreso, salida); no se recalcula al cerrar.
     padron = Inscripcion.objects.filter(grupo=grupo, fecha_ingreso__lte=fecha).filter(Q(fecha_salida__isnull=True) | Q(fecha_salida__gt=fecha))
-    Asistencia.objects.bulk_create([Asistencia(sesion=sesion, inscripcion=i) for i in padron])
+    Asistencia.objects.bulk_create([Asistencia(sesion=sesion, inscripcion=i, deportista_id=i.deportista_id) for i in padron])
     _evento(sesion, actor, clave, 'crear', datos)
     return sesion
 
@@ -87,6 +85,8 @@ def crear_sesion(*, actor, clave, grupo_id, profesor_id, fecha, hora_inicio, hor
 @transaction.atomic
 def comandar(*, actor, sesion_id, version, clave, operacion, datos):
     """Entrada de dominio estricta; datos JSON, autor y timestamps son del servidor."""
+    if operacion in ('realizar', 'confirmar_asistencia', 'corregir_asistencia'):
+        raise PermissionDenied('Usa los comandos de ejecución y asistencia definitiva del Incremento D.')
     referencia = Sesion.objects.get(pk=sesion_id)
     actor, profesor = _usuarios(actor, referencia.profesor_id)
     grupo = Grupo.objects.select_for_update().get(pk=referencia.grupo_id)
@@ -100,6 +100,8 @@ def comandar(*, actor, sesion_id, version, clave, operacion, datos):
         raise Conflicto()
     detalle = {}
     if operacion == 'planificar':
+        if hasattr(sesion, 'ejecucion') and sesion.ejecucion.finalizada_en:
+            raise ValidationError('La ejecución registrada ya está finalizada; su planificación permanece histórica.')
         if sesion.estado != 'planificada' or set(datos) - {'objetivo', 'tareas', 'malla_version_id', 'clase_id', 'programa_id', 'fase_curricular_id', 'semana_id', 'competencias_ids'}:
             raise ValidationError('Plan no editable o campos desconocidos.')
         if not datos.get('objetivo', '').strip() or not datos.get('tareas'):
@@ -132,36 +134,12 @@ def comandar(*, actor, sesion_id, version, clave, operacion, datos):
         CompetenciaPlan.objects.bulk_create([CompetenciaPlan(plan=plan, competencia=c) for c in competencias])
         plan.sellado = True
         plan.save(update_fields=['sellado'])
-    elif operacion == 'realizar':
-        if sesion.estado != 'planificada' or not sesion.planes.exists() or set(datos) != {'inicio', 'fin'}:
-            raise ValidationError('Transición de ejecución inválida.')
-        from django.utils.dateparse import parse_datetime
-        inicio, fin = parse_datetime(datos['inicio']), parse_datetime(datos['fin'])
-        if not inicio or not fin or timezone.is_naive(inicio) or timezone.is_naive(fin) or fin <= inicio or inicio.astimezone(ZoneInfo('America/Bogota')).date() != sesion.fecha:
-            raise ValidationError('Intervalo real inválido; requiere zona y fecha de sesión.')
-        sesion.estado, sesion.inicio_real, sesion.fin_real = 'realizada', inicio, fin
-        sesion.plan_ejecutado = sesion.planes.order_by('-numero').first()
     elif operacion == 'cancelar':
+        if sesion.asistencia_confirmada or hasattr(sesion, 'ejecucion'):
+            raise ValidationError('No se cancela silenciosamente una sesión con ejecución registrada o asistencia cerrada.')
         if sesion.estado != 'planificada' or set(datos) != {'motivo'} or not datos['motivo'].strip():
             raise ValidationError('Cancelación inválida.')
         sesion.estado = 'cancelada'
-    elif operacion in ('confirmar_asistencia', 'corregir_asistencia'):
-        correccion = operacion == 'corregir_asistencia'
-        if sesion.estado != 'realizada' or sesion.asistencia_confirmada != correccion:
-            raise ValidationError('Estado de asistencia incompatible.')
-        if set(datos) != ({'registros', 'motivo'} if correccion else {'registros'}):
-            raise ValidationError('Campos de asistencia inválidos.')
-        if correccion and (not puede_gestionar_operacion(actor) or not datos['motivo'].strip()):
-            raise PermissionDenied('Corrección extraordinaria requiere gestor y motivo.')
-        registros = list(sesion.asistencias.select_for_update().order_by('pk'))
-        valores = datos['registros']
-        if set(valores) != {str(r.inscripcion_id) for r in registros} or any(v not in {'asistio', 'no_asistio', 'tarde', 'excusa', 'retiro'} for v in valores.values()):
-            raise ValidationError('Debe registrar exactamente el padrón completo.')
-        detalle = {'anterior': {str(r.inscripcion_id): r.estado for r in registros}, 'evento_anterior': sesion.eventos.filter(operacion__in=['confirmar_asistencia', 'corregir_asistencia']).order_by('-pk').values_list('pk', flat=True).first()}
-        for registro in registros:
-            registro.estado = valores[str(registro.inscripcion_id)]
-        Asistencia.objects.bulk_update(registros, ['estado'])
-        sesion.asistencia_confirmada = True
     else:
         raise ValidationError('Operación desconocida.')
     sesion.version += 1

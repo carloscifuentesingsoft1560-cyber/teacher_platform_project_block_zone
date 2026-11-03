@@ -88,7 +88,7 @@ class ApiSesiones(TestCase):
 
     def test_cancelar_y_transiciones_bloqueadas(self):
         s = self.crear()
-        self.assertEqual(self.cliente.post(self.ruta(s)+'realizar/', {}, format='json').status_code, 403)
+        self.assertEqual(self.cliente.post(self.ruta(s)+'realizar/', {}, format='json').status_code, 400)
         datos = dict(clave=str(uuid4()), version=1, motivo='Prueba')
         r = self.cliente.post(self.ruta(s)+'cancelar/', datos, format='json')
         self.assertEqual(r.status_code, 200, r.data)

@@ -39,9 +39,11 @@ class DominioSesiones(TestCase):
     def plan(self, sesion, minutos=20):
         return self.comando(sesion, 'planificar', {'objetivo': 'Objetivo ficticio', 'tareas': [dict(fase=f, minutos=minutos, instrucciones='Actividad propia ficticia') for f in ['inicial', 'central', 'final']]})
 
-    def realizada(self):
-        s = self.plan(self.crear())
-        return self.comando(s, 'realizar', {'inicio': '2026-11-02T10:00:00-05:00', 'fin': '2026-11-02T11:00:00-05:00'})
+    def comando_d(self, sesion, operacion, datos, **cambios):
+        from .ejecucion import operar
+        argumentos = dict(actor=self.actor, sesion_id=sesion.pk, version=sesion.version, clave=uuid4(), operacion=operacion, datos=datos)
+        argumentos.update(cambios)
+        return operar(**argumentos)
 
     def test_creacion_padron_e_idempotencia(self):
         clave = uuid4()
@@ -83,26 +85,27 @@ class DominioSesiones(TestCase):
         self.assertEqual(s.planes.get().tareas.count(), 3)
 
     def test_ejecucion_y_asistencia_separadas_correccion_con_historia(self):
-        s = self.realizada()
+        s = self.plan(self.crear())
         self.assertFalse(s.asistencia_confirmada)
-        self.assertIsNotNone(s.plan_ejecutado_id)
+        self.assertIsNone(s.plan_ejecutado_id)
         with self.assertRaises(ValidationError):
-            self.comando(s, 'confirmar_asistencia', {'registros': {}})
+            self.comando_d(s, 'guardar_asistencia', {'registros': {}})
         self.assertEqual(s.asistencias.get().estado, '')
         datos = {'registros': {str(self.inscripcion.pk): 'tarde'}}
         clave = uuid4()
         version = s.version
-        s = self.comando(s, 'confirmar_asistencia', datos, clave=clave)
-        self.comando(s, 'confirmar_asistencia', datos, clave=clave, version=version)
-        self.assertEqual(s.eventos.filter(operacion='confirmar_asistencia').count(), 1)
+        s = self.comando_d(s, 'guardar_asistencia', datos, clave=clave)
+        self.comando_d(s, 'guardar_asistencia', datos, clave=clave, version=version)
+        self.assertEqual(s.eventos.filter(operacion='guardar_asistencia').count(), 1)
+        s = self.comando_d(s, 'cerrar_asistencia', {})
         with self.assertRaises(ValidationError):
-            self.comando(s, 'confirmar_asistencia', datos)
-        correccion = {'registros': {str(self.inscripcion.pk): 'asistio'}, 'motivo': 'Rectificación ficticia'}
+            self.comando_d(s, 'guardar_asistencia', datos)
+        correccion = {'deportista': self.inscripcion.deportista_id, 'anterior': 'tarde', 'nuevo': 'asistio', 'motivo': 'Rectificación ficticia'}
         with self.assertRaises(PermissionDenied):
-            self.comando(s, 'corregir_asistencia', correccion)
-        s = self.comando(s, 'corregir_asistencia', correccion, actor=self.admin)
+            self.comando_d(s, 'corregir_asistencia', correccion)
+        s = self.comando_d(s, 'corregir_asistencia', correccion, actor=self.admin)
         evento = s.eventos.get(operacion='corregir_asistencia')
-        self.assertEqual(evento.detalle['anterior'][str(self.inscripcion.pk)], 'tarde')
+        self.assertEqual(evento.detalle['anterior'], 'tarde')
         self.assertTrue(evento.detalle['evento_anterior'])
 
     def test_padron_no_se_recalcula_y_referencia_protegida(self):
@@ -133,7 +136,7 @@ class DominioSesiones(TestCase):
     def test_asistencia_planificada_y_cancelada_bloqueadas(self):
         s = self.crear()
         datos = {'registros': {str(self.inscripcion.pk): 'asistio'}}
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(PermissionDenied):
             self.comando(s, 'confirmar_asistencia', datos)
         s = self.comando(s, 'cancelar', {'motivo': 'Prueba'})
         with self.assertRaises(ValidationError):
@@ -145,10 +148,10 @@ class DominioSesiones(TestCase):
         s = self.plan(s)
         self.assertEqual(s.planes.count(), 2)
         self.assertEqual(original.tareas.count(), 3)
-        s = self.comando(s, 'realizar', {'inicio': '2026-11-02T10:00:00-05:00', 'fin': '2026-11-02T11:00:00-05:00'})
-        self.assertEqual(s.plan_ejecutado.numero, 2)
-        with self.assertRaises(ValidationError):
-            self.plan(s)
+        with self.assertRaises(PermissionDenied):
+            self.comando(s, 'realizar', {'inicio': '2026-11-02T10:00:00-05:00', 'fin': '2026-11-02T11:00:00-05:00'})
+        self.assertIsNone(s.plan_ejecutado_id)
+        self.assertEqual(s.planes.order_by('-numero').first().numero, 2)
 
     def test_malla_borrador_y_clase_ajena_rechazadas(self):
         from curriculo.models import ProgramaFormativo, Malla, MallaVersion, FaseCurricular, SemanaCurricular, ClasePrevista
@@ -169,11 +172,12 @@ class DominioSesiones(TestCase):
         self.assertFalse(s.planes.exists())
 
     def test_gestor_puede_corregir_tras_baja_del_profesor(self):
-        s = self.realizada()
+        s = self.plan(self.crear())
         datos = {'registros': {str(self.inscripcion.pk): 'no_asistio'}}
-        s = self.comando(s, 'confirmar_asistencia', datos)
+        s = self.comando_d(s, 'guardar_asistencia', datos)
+        s = self.comando_d(s, 'cerrar_asistencia', {})
         Usuario.objects.filter(pk=self.actor.pk).update(is_active=False)
-        s = self.comando(s, 'corregir_asistencia', dict(datos, motivo='Revisión ficticia'), actor=self.admin)
+        s = self.comando_d(s, 'corregir_asistencia', dict(deportista=self.inscripcion.deportista_id, anterior='no_asistio', nuevo='excusa', motivo='Revisión ficticia'), actor=self.admin)
         self.assertTrue(s.asistencia_confirmada)
 
 

@@ -90,7 +90,13 @@ class PlanLectura(serializers.ModelSerializer):
 
 class SesionLectura(serializers.ModelSerializer):
     planes = PlanLectura(many=True, read_only=True)
+    estado_ejecucion = serializers.SerializerMethodField()
+
+    def get_estado_ejecucion(self, sesion):
+        if not hasattr(sesion, 'ejecucion'):
+            return 'sin_registro'
+        return 'registrada_pendiente_validacion' if sesion.ejecucion.finalizada_en else 'borrador'
 
     class Meta:
         model = Sesion
-        fields = ['id', 'uuid', 'grupo', 'profesor', 'fecha', 'hora_inicio', 'hora_fin', 'estado', 'version', 'asistencia_confirmada', 'inicio_real', 'fin_real', 'plan_ejecutado', 'planes']
+        fields = ['id', 'uuid', 'grupo', 'profesor', 'fecha', 'hora_inicio', 'hora_fin', 'estado', 'estado_ejecucion', 'version', 'asistencia_confirmada', 'inicio_real', 'fin_real', 'plan_ejecutado', 'planes']

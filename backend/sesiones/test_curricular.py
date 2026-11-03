@@ -9,7 +9,7 @@ from curriculo.models import ProgramaFormativo, Malla, MallaVersion, FaseCurricu
 from biblioteca.models import Ejercicio, EjercicioVersion, PasoEjercicio
 from recursos.editorial import transicion, derivar
 from . import tests as dominio
-from .models import PlanSesion, TareaSesion, CompetenciaPlan
+from .models import PlanSesion, TareaSesion, CompetenciaPlan, Asistencia
 
 
 class IntegracionCurricular(TestCase):
@@ -192,7 +192,7 @@ class IntegracionCurricular(TestCase):
         self.assertEqual(self.opciones('versiones').status_code, 403)
         self.cliente.force_authenticate(self.admin)
         self.assertEqual(self.opciones('versiones').status_code, 200)
-        self.assertEqual(self.cliente.post(self.ruta+'realizar/', {}, format='json').status_code, 403)
+        self.assertEqual(self.cliente.post(self.ruta+'realizar/', {}, format='json').status_code, 400)
 
     def test_errores_selector_y_version_conflicto(self):
         for tipo, filtros in [('desconocido', {}), ('clases', {}), ('semanas', {'malla_version': 'x'}), ('competencias', {'malla_version': 99999})]:
@@ -265,7 +265,7 @@ class MigracionPlanesExistentes(TransactionTestCase):
         from django.db.migrations.executor import MigrationExecutor
         dominio.ConcurrenciaSesiones.setUp(self)
         sesion = self.crear()
-        destino = [('sesiones', '0003_planes_inmutables')]
+        destino = [('sesiones', '0005_cierre_definitivo')]
         try:
             executor = MigrationExecutor(connection)
             executor.migrate([('sesiones', '0001_initial')])
@@ -285,6 +285,7 @@ class MigracionPlanesExistentes(TransactionTestCase):
             self.assertEqual(revision.revision_anterior_id, original.pk)
             self.assertIsNone(original.programa_id)
             self.assertEqual(original.tareas.count(), 3)
+            self.assertEqual(Asistencia.objects.get().deportista_id, self.inscripcion.deportista_id)
             with self.assertRaises(IntegrityError), transaction.atomic():
                 original.tareas.update(instrucciones='Alteración')
         finally:
