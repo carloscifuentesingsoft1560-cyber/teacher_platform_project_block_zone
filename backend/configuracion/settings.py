@@ -21,7 +21,7 @@ DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 ALLOWED_HOSTS = [valor.strip() for valor in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if valor.strip()]
 CSRF_TRUSTED_ORIGINS = [valor.strip() for valor in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if valor.strip()]
 INSTALLED_APPS = [
-    "recursos", "curriculo", "biblioteca",
+    "recursos", "curriculo", "biblioteca", "sesiones",
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
     "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
     "rest_framework", "cuentas.apps.CuentasConfig", "paneles.apps.PanelesConfig", "auditoria.apps.AuditoriaConfig", "organizacion.apps.OrganizacionConfig", "deportistas.apps.DeportistasConfig", "inscripciones.apps.InscripcionesConfig",

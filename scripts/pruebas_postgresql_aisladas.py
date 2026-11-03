@@ -17,7 +17,7 @@ def argumentos(argv=None):
     parser.add_argument("--verbosity", type=int, choices=range(4), default=1)
     opciones = parser.parse_args(argv)
     import re
-    if any(not re.fullmatch(r"(?:cuentas|organizacion|paneles|deportistas|inscripciones|recursos|curriculo|biblioteca)(?:\.[A-Za-z_][A-Za-z0-9_]*)*", e) for e in opciones.etiqueta):
+    if any(not re.fullmatch(r"(?:cuentas|organizacion|paneles|deportistas|inscripciones|recursos|curriculo|biblioteca|sesiones)(?:\.[A-Za-z_][A-Za-z0-9_]*)*", e) for e in opciones.etiqueta):
         parser.error("Etiqueta de pruebas no admitida")
     return opciones
 
@@ -111,7 +111,7 @@ def ejecutar(argv=None):
                 raise RuntimeError("El PID PostgreSQL no coincide con el proceso hijo creado.")
             print("Clúster temporal verificado en puerto", puerto, "; sin conexión a zona_bloque.", flush=True)
             comando = [sys.executable, str(raiz / "scripts/django_local.py")]
-            resultado["pruebas"] = ejecutar_registrado(comando + ["test", *(opciones.etiqueta or ["cuentas", "organizacion", "paneles", "deportistas", "inscripciones", "recursos", "curriculo", "biblioteca"]), "--settings=configuracion.settings_pruebas_postgresql",
+            resultado["pruebas"] = ejecutar_registrado(comando + ["test", *(opciones.etiqueta or ["cuentas", "organizacion", "paneles", "deportistas", "inscripciones", "recursos", "curriculo", "biblioteca", "sesiones"]), "--settings=configuracion.settings_pruebas_postgresql",
                 "--noinput", "--verbosity", str(opciones.verbosity)] + (["--failfast"] if opciones.failfast else []), "pruebas.log")
             if resultado["pruebas"] != 0:
                 return resultado["pruebas"]
