@@ -33,7 +33,8 @@ class SesionVista(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
             if not grupo.isdecimal() or int(grupo) < 1:
                 raise ValidationError({'grupo': 'Identificador inválido.'})
             datos = datos.filter(grupo_id=int(grupo))
-        return datos
+        from .seguimiento import filtrar
+        return filtrar(datos, self.request.query_params)
 
     def ejecutar(self, funcion, **argumentos):
         try:
@@ -178,3 +179,29 @@ class SesionVista(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         datos = grupos_disponibles(request.user).order_by('nombre', 'pk').values('id', 'codigo', 'nombre', 'nivel_id', 'periodo_id')
         pagina = self.paginate_queryset(datos)
         return self.get_paginated_response(list(pagina))
+
+    @action(detail=True, methods=['get', 'post'])
+    def seguimiento(self, request, pk=None):
+        from .seguimiento import NuevoSeguimiento, LecturaSeguimiento, registrar
+        sesion = self.get_object()
+        if request.method == 'POST':
+            entrada = NuevoSeguimiento(data=request.data)
+            entrada.is_valid(raise_exception=True)
+            sesion = registrar(actor=request.user, sesion_id=sesion.pk, **entrada.validated_data)
+            return Response(dict(sesion=SesionLectura(sesion).data))
+        pagina = self.paginate_queryset(sesion.seguimientos.all())
+        return self.get_paginated_response(LecturaSeguimiento(pagina, many=True).data)
+
+    @action(detail=False, methods=['get'])
+    def informes(self, request):
+        from .seguimiento import filtrar, indicadores
+        # El mismo ámbito que detalle; los indicadores preceden a la paginación.
+        consulta = filtrar(sesiones_visibles(request.user), request.query_params)
+        dimensiones = {'profesor': 'profesor_id', 'grupo': 'grupo_id', 'nivel': 'grupo__nivel_id', 'periodo': 'grupo__periodo_id'}
+        dimension = request.query_params.get('agrupar', 'grupo')
+        if dimension not in dimensiones:
+            raise ValidationError({'agrupar': 'Dimensión inválida.'})
+        campo = dimensiones[dimension]
+        claves = consulta.order_by(campo).values_list(campo, flat=True).distinct()
+        pagina = self.paginate_queryset(claves)
+        return self.get_paginated_response([dict(dimension=dimension, id=pk, indicadores=indicadores(consulta.filter(**{campo: pk}))) for pk in pagina])

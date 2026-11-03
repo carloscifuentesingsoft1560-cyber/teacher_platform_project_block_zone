@@ -136,3 +136,15 @@ class EventoSesion(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['actor', 'clave'], name='evento_sesion_actor_clave')]
+
+class SeguimientoPedagogico(models.Model):
+    sesion = models.ForeignKey(Sesion, on_delete=models.PROTECT, related_name='seguimientos')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    registrado_en = models.DateTimeField(auto_now_add=True)
+    comentario = models.TextField()
+    recomendaciones = models.TextField(blank=True)
+    anterior = models.OneToOneField('self', null=True, blank=True, on_delete=models.PROTECT, related_name='siguiente')
+    evento = models.OneToOneField(EventoSesion, on_delete=models.PROTECT)
+
+    class Meta:
+        ordering = ['pk']

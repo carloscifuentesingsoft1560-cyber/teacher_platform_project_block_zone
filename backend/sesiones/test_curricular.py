@@ -265,7 +265,7 @@ class MigracionPlanesExistentes(TransactionTestCase):
         from django.db.migrations.executor import MigrationExecutor
         dominio.ConcurrenciaSesiones.setUp(self)
         sesion = self.crear()
-        destino = [('sesiones', '0005_cierre_definitivo')]
+        destino = [('sesiones', '0007_seguimiento_inmutable')]
         try:
             executor = MigrationExecutor(connection)
             executor.migrate([('sesiones', '0001_initial')])
