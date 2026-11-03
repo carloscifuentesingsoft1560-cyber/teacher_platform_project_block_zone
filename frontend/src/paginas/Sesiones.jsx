@@ -1,12 +1,22 @@
 
 import { useEffect, useRef, useState } from 'react';
+
 import { solicitar } from '../api/cliente.js';
-import { guardar, fechaBogota } from '../api/gestion.js';
+import {
+  guardar,
+  todas,
+  fechaBogota,
+} from '../api/gestion.js';
+
 import {
   Campo,
   ErrorGestion,
   Paginacion,
 } from '../componentes/Gestion.jsx';
+
+import {
+  PlanificacionSesion,
+} from '../componentes/PlanificacionSesion.jsx';
 
 const SITUACIONES = [
   ['', 'Todas las sesiones'],
@@ -61,6 +71,7 @@ export function Sesiones() {
   });
 
   const [grupos, establecerGrupos] = useState([]);
+
   const [situacion, establecerSituacion] = useState('');
   const [pagina, establecerPagina] = useState(1);
   const [revision, establecerRevision] = useState(0);
@@ -70,6 +81,9 @@ export function Sesiones() {
     useState(true);
 
   const [error, establecerError] = useState(null);
+  const [errorGrupos, establecerErrorGrupos] =
+    useState(null);
+
   const [mensaje, establecerMensaje] = useState('');
 
   const [mostrarFormulario, establecerMostrarFormulario] =
@@ -84,52 +98,39 @@ export function Sesiones() {
   const [cargandoDetalle, establecerCargandoDetalle] =
     useState(false);
 
-  const [errorDetalle, establecerErrorDetalle] = useState(null);
+  const [errorDetalle, establecerErrorDetalle] =
+    useState(null);
 
-  // Conserva el identificador de una creación incierta.
-  // No se genera una segunda clave para repetir la misma petición.
+  const [planificando, establecerPlanificando] =
+    useState(false);
+
   const intentoCreacion = useRef(null);
+  const consultaDetalle = useRef(0);
 
   useEffect(() => {
     let vigente = true;
 
     async function cargarGrupos() {
       establecerCargandoGrupos(true);
+      establecerErrorGrupos(null);
 
       try {
-        const acumulados = [];
-        let siguiente = '/sesiones/grupos/';
+        const respuesta = await todas(
+          '/sesiones/grupos/'
+        );
 
-        for (let i = 0; siguiente && i < 100; i += 1) {
-          const respuesta = await solicitar(siguiente);
-
-          acumulados.push(...(respuesta.results || []));
-
-          if (respuesta.next) {
-            const url = new URL(
-              respuesta.next,
-              window.location.origin
-            );
-
-            siguiente =
-              url.pathname.replace(/^\/api/, '') +
-              url.search;
-          } else {
-            siguiente = null;
-          }
+        if (vigente) {
+          establecerGrupos(respuesta);
         }
-
-        if (siguiente) {
-          throw new Error(
-            'Hay demasiados grupos para este selector.'
-          );
-        }
-
-        if (vigente) establecerGrupos(acumulados);
       } catch (fallo) {
-        if (vigente) establecerError(fallo);
+        if (vigente) {
+          establecerErrorGrupos(fallo);
+          establecerGrupos([]);
+        }
       } finally {
-        if (vigente) establecerCargandoGrupos(false);
+        if (vigente) {
+          establecerCargandoGrupos(false);
+        }
       }
     }
 
@@ -166,6 +167,7 @@ export function Sesiones() {
       } catch (fallo) {
         if (vigente) {
           establecerError(fallo);
+
           establecerSesiones({
             results: [],
             count: 0,
@@ -173,7 +175,9 @@ export function Sesiones() {
           });
         }
       } finally {
-        if (vigente) establecerCargando(false);
+        if (vigente) {
+          establecerCargando(false);
+        }
       }
     }
 
@@ -183,6 +187,16 @@ export function Sesiones() {
       vigente = false;
     };
   }, [pagina, situacion, revision]);
+
+  function actualizarListado() {
+    establecerRevision((actual) => actual + 1);
+  }
+
+  function cambiarSituacion(valor) {
+    establecerSituacion(valor);
+    establecerPagina(1);
+    cerrarDetalle();
+  }
 
   function cambiarCampo(campo, valor) {
     establecerFormulario((actual) => ({
@@ -194,16 +208,6 @@ export function Sesiones() {
     establecerMensaje('');
   }
 
-  function actualizarListado() {
-    establecerRevision((actual) => actual + 1);
-  }
-
-  function cambiarSituacion(valor) {
-    establecerSituacion(valor);
-    establecerPagina(1);
-    establecerDetalle(null);
-  }
-
   function alternarFormulario() {
     establecerMostrarFormulario((actual) => !actual);
     establecerError(null);
@@ -211,19 +215,62 @@ export function Sesiones() {
     intentoCreacion.current = null;
   }
 
-  async function consultarDetalle(id) {
+  function cerrarDetalle() {
+    consultaDetalle.current += 1;
     establecerDetalle(null);
+    establecerPlanificando(false);
+    establecerErrorDetalle(null);
+    establecerCargandoDetalle(false);
+  }
+
+  async function consultarDetalle(id) {
+    const consultaActual = ++consultaDetalle.current;
+
+    establecerDetalle(null);
+    establecerPlanificando(false);
     establecerErrorDetalle(null);
     establecerCargandoDetalle(true);
 
     try {
-      const respuesta = await solicitar(`/sesiones/${id}/`);
-      establecerDetalle(respuesta);
+      const respuesta = await solicitar(
+        `/sesiones/${id}/`
+      );
+
+      if (consultaActual === consultaDetalle.current) {
+        establecerDetalle(respuesta);
+      }
     } catch (fallo) {
-      establecerErrorDetalle(fallo);
+      if (consultaActual === consultaDetalle.current) {
+        establecerErrorDetalle(fallo);
+      }
     } finally {
-      establecerCargandoDetalle(false);
+      if (consultaActual === consultaDetalle.current) {
+        establecerCargandoDetalle(false);
+      }
     }
+  }
+
+  function iniciarPlanificacion() {
+    establecerPlanificando(true);
+    establecerErrorDetalle(null);
+  }
+
+  function cerrarPlanificacion() {
+    establecerPlanificando(false);
+  }
+
+  function planGuardado(sesionActualizada) {
+    // Django devuelve la nueva versión y el historial.
+    establecerDetalle(sesionActualizada);
+    establecerPlanificando(false);
+    establecerErrorDetalle(null);
+
+    // Actualizar también la tabla.
+    actualizarListado();
+
+    establecerMensaje(
+      'La nueva revisión de planificación quedó registrada.'
+    );
   }
 
   async function crearSesion(evento) {
@@ -234,30 +281,32 @@ export function Sesiones() {
     establecerError(null);
     establecerMensaje('');
 
-    const nuevoContenido = {
+    const contenido = {
       grupo: Number(formulario.grupo),
       fecha: formulario.fecha,
       hora_inicio: formulario.hora_inicio,
       hora_fin: formulario.hora_fin,
     };
 
-    if (!nuevoContenido.grupo) {
-      establecerError(new Error('Selecciona un grupo.'));
+    if (!contenido.grupo) {
+      establecerError(
+        new Error('Selecciona un grupo.')
+      );
       return;
     }
 
     if (
-      nuevoContenido.hora_fin <= nuevoContenido.hora_inicio
+      contenido.hora_fin <= contenido.hora_inicio
     ) {
       establecerError(
         new Error(
-          'La hora de finalización debe ser posterior al inicio.'
+          'La hora final debe ser posterior a la hora inicial.'
         )
       );
       return;
     }
 
-    const firma = JSON.stringify(nuevoContenido);
+    const firma = JSON.stringify(contenido);
 
     if (!intentoCreacion.current) {
       intentoCreacion.current = {
@@ -266,11 +315,10 @@ export function Sesiones() {
       };
     }
 
-    // El mismo intento conserva la misma clave UUID.
     if (intentoCreacion.current.firma !== firma) {
       establecerError(
         new Error(
-          'El formulario cambió. Actualiza antes de crear.'
+          'Los datos cambiaron. Actualiza antes de crear.'
         )
       );
       return;
@@ -278,7 +326,7 @@ export function Sesiones() {
 
     const datos = {
       clave: intentoCreacion.current.clave,
-      ...nuevoContenido,
+      ...contenido,
     };
 
     establecerEnviando(true);
@@ -287,7 +335,10 @@ export function Sesiones() {
       await guardar('/sesiones/', datos);
 
       intentoCreacion.current = null;
-      establecerMensaje('Sesión creada correctamente.');
+
+      establecerMensaje(
+        'Sesión creada correctamente.'
+      );
 
       establecerMostrarFormulario(false);
       establecerFormulario(formularioInicial());
@@ -298,19 +349,16 @@ export function Sesiones() {
 
       if (fallo.estado === 0) {
         establecerMensaje(
-          'La respuesta del servidor no llegó. ' +
-          'Comprueba el listado antes de repetir la operación. ' +
-          'El mismo formulario conservará su clave de solicitud.'
+          'No llegó la respuesta del servidor. ' +
+          'Comprueba el listado antes de repetir la operación.'
         );
       } else if (
-        fallo.estado === 401 ||
-        fallo.estado === 403 ||
-        fallo.estado === 409
+        [400, 403, 409].includes(fallo.estado)
       ) {
         intentoCreacion.current = null;
+
         establecerMensaje(
-          'Actualiza los datos y verifica tus permisos ' +
-          'antes de volver a intentar.'
+          'Actualiza los datos y verifica los permisos antes de reintentar.'
         );
       }
     } finally {
@@ -323,15 +371,14 @@ export function Sesiones() {
       <h1>Mis sesiones</h1>
 
       <p>
-        Consulta las sesiones de entrenamiento, revisa su
-        planificación y crea nuevas sesiones dentro de los
-        grupos para los que tienes autorización.
+        Consulta tus sesiones, crea nuevas sesiones y
+        registra las revisiones de su planificación.
       </p>
 
       <p className="aviso">
-        Un informe de ejecución cerrado no significa que
-        la sesión esté validada institucionalmente como
-        realizada.
+        Una ejecución cerrada no significa que la
+        sesión esté validada institucionalmente
+        como realizada.
       </p>
 
       <div className="barra-gestion">
@@ -374,10 +421,11 @@ export function Sesiones() {
           <h2>Crear sesión de entrenamiento</h2>
 
           <p>
-            Selecciona el grupo y el horario. El servidor
-            verificará los permisos, las asignaciones y
-            las restricciones de programación.
+            Selecciona el grupo, la fecha y el horario.
+            Django comprobará las asignaciones y permisos.
           </p>
+
+          <ErrorGestion error={errorGrupos} />
 
           <div className="rejilla-formulario">
             <Campo
@@ -483,8 +531,8 @@ export function Sesiones() {
               <th>Fecha</th>
               <th>Grupo</th>
               <th>Horario</th>
-              <th>Situación</th>
-              <th>Consulta</th>
+              <th>Estado</th>
+              <th>Detalle</th>
             </tr>
           </thead>
 
@@ -501,7 +549,9 @@ export function Sesiones() {
                   {horaCorta(sesion.hora_fin)}
                 </td>
 
-                <td>{describirEstado(sesion)}</td>
+                <td>
+                  {describirEstado(sesion)}
+                </td>
 
                 <td>
                   <button
@@ -570,12 +620,51 @@ export function Sesiones() {
             <dd>{detalle.version}</dd>
           </dl>
 
+          <div className="acciones">
+            {!planificando &&
+              detalle.estado === 'planificada' && (
+                <button
+                  type="button"
+                  onClick={iniciarPlanificacion}
+                >
+                  Planificar sesión
+                </button>
+              )}
+
+            <button
+              type="button"
+              className="boton-secundario"
+              onClick={() =>
+                consultarDetalle(detalle.id)
+              }
+            >
+              Actualizar detalle
+            </button>
+
+            <button
+              type="button"
+              className="boton-secundario"
+              onClick={cerrarDetalle}
+            >
+              Cerrar detalle
+            </button>
+          </div>
+
+          {planificando && (
+            <PlanificacionSesion
+              key={`${detalle.id}-${detalle.version}`}
+              sesion={detalle}
+              onGuardado={planGuardado}
+              onCancelar={cerrarPlanificacion}
+            />
+          )}
+
           <h3>Historial de planificación</h3>
 
           {!detalle.planes?.length && (
             <p>
-              Todavía no existe una planificación
-              registrada para esta sesión.
+              Esta sesión todavía no tiene planificación
+              registrada.
             </p>
           )}
 
@@ -584,20 +673,26 @@ export function Sesiones() {
               key={plan.id}
               className="formulario-gestion"
             >
-              <h3>Plan número {plan.numero}</h3>
+              <h4>
+                Revisión número {plan.numero}
+              </h4>
 
               <p>
                 <strong>Objetivo:</strong>{' '}
                 {plan.objetivo}
               </p>
 
-              {plan.malla_version && (
-                <p>
-                  Versión curricular: {plan.malla_version}
-                </p>
-              )}
+              <p>
+                <strong>Autor:</strong>{' '}
+                {plan.autor}
+              </p>
 
-              <h4>Actividades planificadas</h4>
+              <p>
+                <strong>Fecha de registro:</strong>{' '}
+                {plan.creado_en}
+              </p>
+
+              <h4>Actividades</h4>
 
               <ul>
                 {plan.tareas?.map((tarea) => (
@@ -612,14 +707,6 @@ export function Sesiones() {
               </ul>
             </article>
           ))}
-
-          <button
-            type="button"
-            className="boton-secundario"
-            onClick={() => establecerDetalle(null)}
-          >
-            Cerrar detalle
-          </button>
         </section>
       )}
     </section>
