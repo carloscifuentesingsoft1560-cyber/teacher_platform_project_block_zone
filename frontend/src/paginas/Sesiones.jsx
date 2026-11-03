@@ -1,5 +1,6 @@
 
 import { useEffect, useRef, useState } from 'react';
+import { ConsultaEjecucionSesion } from '../componentes/ConsultaEjecucionSesion.jsx';
 
 import { solicitar } from '../api/cliente.js';
 import {
@@ -658,6 +659,11 @@ export function Sesiones() {
               onCancelar={cerrarPlanificacion}
             />
           )}
+
+          <ConsultaEjecucionSesion
+            key={`${detalle.id}-${detalle.version}`}
+            sesion={detalle}
+          />
 
           <h3>Historial de planificación</h3>
 

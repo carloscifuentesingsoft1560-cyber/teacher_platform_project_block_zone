@@ -222,6 +222,20 @@ describe('Etapa 4F: Mis sesiones', () => {
     expect(
       screen.getByText(/Movilidad articular/)
     ).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Ejecución y asistencia',
+      })
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(
+        llamadas.some(
+          ({ ruta }) =>
+            ruta === '/api/sesiones/12/asistencia/'
+        )
+      ).toBe(true);
+    });
   });
 
   it('crea una sesión con UUID y protección CSRF', async () => {
