@@ -5,6 +5,7 @@ import { ConsultaEjecucionSesion } from '../componentes/ConsultaEjecucionSesion.
 import { RegistroAsistenciaSesion } from '../componentes/RegistroAsistenciaSesion.jsx';
 import { CierreAsistenciaSesion } from '../componentes/CierreAsistenciaSesion.jsx';
 import { RegistroEjecucionSesion } from '../componentes/RegistroEjecucionSesion.jsx';
+import { FinalizacionEjecucionSesion } from '../componentes/FinalizacionEjecucionSesion.jsx';
 
 import { solicitar } from '../api/cliente.js';
 
@@ -122,6 +123,9 @@ export function Sesiones() {
     useState(false);
 
   const [registrandoEjecucion, establecerRegistrandoEjecucion] =
+    useState(false);
+
+  const [finalizandoEjecucion, establecerFinalizandoEjecucion] =
     useState(false);
 
   const intentoCreacion = useRef(null);
@@ -246,6 +250,7 @@ export function Sesiones() {
     establecerRegistrandoAsistencia(false);
     establecerCerrandoAsistencia(false);
     establecerRegistrandoEjecucion(false);
+    establecerFinalizandoEjecucion(false);
 
     establecerErrorDetalle(null);
     establecerCargandoDetalle(false);
@@ -260,6 +265,7 @@ export function Sesiones() {
     establecerRegistrandoAsistencia(false);
     establecerCerrandoAsistencia(false);
     establecerRegistrandoEjecucion(false);
+    establecerFinalizandoEjecucion(false);
 
     establecerErrorDetalle(null);
     establecerCargandoDetalle(true);
@@ -432,6 +438,58 @@ export function Sesiones() {
     establecerMensaje(
       'Ejecución guardada como borrador. ' +
       'La finalización y la validación institucional siguen pendientes.'
+    );
+  }
+
+  // F3.5: finalización definitiva de ejecución.
+  function iniciarFinalizacionEjecucion() {
+    establecerPlanificando(false);
+    establecerRegistrandoAsistencia(false);
+    establecerCerrandoAsistencia(false);
+    establecerRegistrandoEjecucion(false);
+    establecerFinalizandoEjecucion(true);
+    establecerErrorDetalle(null);
+    establecerMensaje('');
+  }
+
+  function cancelarFinalizacionEjecucion() {
+    establecerFinalizandoEjecucion(false);
+  }
+
+  function ejecucionFinalizada(resultado) {
+    if (
+      !resultado?.sesion ||
+      resultado.sesion.id !== detalle?.id ||
+      resultado.sesion.version !== detalle.version + 1 ||
+      resultado.sesion.estado !== 'planificada' ||
+      resultado.sesion.estado_ejecucion !==
+        'registrada_pendiente_validacion' ||
+      !resultado.sesion.asistencia_confirmada ||
+      !resultado?.asistencia?.cerrada
+    ) {
+      establecerFinalizandoEjecucion(false);
+      establecerErrorDetalle(
+        new Error(
+          'No se pudo verificar completamente la finalización. ' +
+          'Actualiza el detalle antes de continuar.'
+        )
+      );
+      return;
+    }
+
+    establecerDetalle(resultado.sesion);
+    establecerFinalizandoEjecucion(false);
+    establecerPlanificando(false);
+    establecerRegistrandoAsistencia(false);
+    establecerCerrandoAsistencia(false);
+    establecerRegistrandoEjecucion(false);
+    establecerErrorDetalle(null);
+
+    actualizarListado();
+
+    establecerMensaje(
+      'Ejecución finalizada y asistencia cerrada. ' +
+      'La validación institucional continúa pendiente.'
     );
   }
 
@@ -789,6 +847,7 @@ export function Sesiones() {
               !registrandoAsistencia &&
               !cerrandoAsistencia &&
               !registrandoEjecucion &&
+              !finalizandoEjecucion &&
               detalle.estado === 'planificada' && (
                 <button
                   type="button"
@@ -802,6 +861,7 @@ export function Sesiones() {
               !registrandoAsistencia &&
               !cerrandoAsistencia &&
               !registrandoEjecucion &&
+              !finalizandoEjecucion &&
               detalle.estado === 'planificada' &&
               !detalle.asistencia_confirmada && (
                 <button
@@ -816,6 +876,7 @@ export function Sesiones() {
               !registrandoAsistencia &&
               !cerrandoAsistencia &&
               !registrandoEjecucion &&
+              !finalizandoEjecucion &&
               detalle.estado === 'planificada' &&
               !detalle.asistencia_confirmada && (
                 <button
@@ -830,6 +891,7 @@ export function Sesiones() {
               !registrandoAsistencia &&
               !cerrandoAsistencia &&
               !registrandoEjecucion &&
+              !finalizandoEjecucion &&
               detalle.estado === 'planificada' &&
               detalle.estado_ejecucion !==
                 'registrada_pendiente_validacion' &&
@@ -839,6 +901,21 @@ export function Sesiones() {
                   onClick={iniciarRegistroEjecucion}
                 >
                   Registrar ejecución
+                </button>
+              )}
+
+            {!planificando &&
+              !registrandoAsistencia &&
+              !cerrandoAsistencia &&
+              !registrandoEjecucion &&
+              !finalizandoEjecucion &&
+              detalle.estado === 'planificada' &&
+              detalle.estado_ejecucion === 'borrador' && (
+                <button
+                  type="button"
+                  onClick={iniciarFinalizacionEjecucion}
+                >
+                  Finalizar ejecución
                 </button>
               )}
 
@@ -902,6 +979,15 @@ export function Sesiones() {
               sesion={detalle}
               onGuardado={ejecucionGuardada}
               onCancelar={cerrarRegistroEjecucion}
+            />
+          )}
+
+          {finalizandoEjecucion && (
+            <FinalizacionEjecucionSesion
+              key={`finalizacion-${detalle.id}-${detalle.version}`}
+              sesion={detalle}
+              onFinalizado={ejecucionFinalizada}
+              onCancelar={cancelarFinalizacionEjecucion}
             />
           )}
 
