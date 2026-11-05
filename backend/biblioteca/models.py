@@ -120,3 +120,9 @@ class EventoMaterial(Evento):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['actor', 'clave'], name='evento_material_clave_unica')]
+
+
+from .modelos_funcionales import (PerfilFuncional, PerfilFuncionalVersion,
+    ExigenciaPerfilFuncional, CondicionPerfilFuncional, AdaptacionPerfilFuncional,
+    ProcedenciaPerfilFuncional, EventoPerfilFuncional, CorrespondenciaFuncional,
+    CorrespondenciaFuncionalVersion, EventoCorrespondenciaFuncional)  # noqa: E402,F401
