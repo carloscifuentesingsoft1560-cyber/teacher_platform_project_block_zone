@@ -58,3 +58,6 @@ class SolicitudRestablecimiento(models.Model):
 from .modelos_identidad import Persona, EnlaceIdentidad  # noqa: E402,F401
 from .modelos_roles import PertenenciaRol, EventoRol  # noqa: E402,F401
 from .modelos_competencias import CompetenciaEmisora, EventoCompetenciaEmisora  # noqa: E402,F401
+from .modelos_acreditaciones_emisoras import (  # noqa: E402,F401
+    MandatoInstitucional, EventoMandatoInstitucional, AcreditacionEmisora, EventoAcreditacionEmisora,
+)
