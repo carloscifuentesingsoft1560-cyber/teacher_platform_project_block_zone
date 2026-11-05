@@ -3,29 +3,25 @@ import os
 from pathlib import Path
 import uuid
 from django.core.exceptions import ImproperlyConfigured
+from .aislamiento_pruebas import validar_entorno
 
 # Fallar antes de cargar .env o abrir conexiones si no se usa el ejecutor aislado.
-_cluster = os.environ.get("ZDB_PG_TEST_CLUSTER", "")
 _raiz = Path(__file__).resolve().parents[2]
 try:
-    _datos = Path(_cluster).resolve()
-    _pid = (_datos / "postmaster.pid").read_text().splitlines()
-    _ruta_valida = _datos.is_relative_to((_raiz / "respaldos").resolve()) and _datos.name == "cluster"
-    _conexion_valida = (
-        os.environ.get("POSTGRES_HOST") == "127.0.0.1"
-        and os.environ.get("POSTGRES_DB") == "postgres"
-        and os.environ.get("POSTGRES_USER") == "postgres"
-        and os.environ.get("POSTGRES_PORT") == _pid[3]
-        and int(_pid[0]) > 0 and Path(_pid[1]).resolve() == _datos
-    )
-except (OSError, ValueError, IndexError):
-    _ruta_valida = _conexion_valida = False
-if not _cluster or not _ruta_valida or not _conexion_valida:
-    raise ImproperlyConfigured("Usa scripts/pruebas_postgresql_aisladas.py; se rechaza cualquier base no aislada.")
+    _carpeta, _puerto = validar_entorno(os.environ, _raiz)
+except (OSError, ValueError, IndexError, KeyError) as error:
+    raise ImproperlyConfigured("Usa scripts/pruebas_postgresql_aisladas.py; se rechaza cualquier base no aislada.") from error
 
 from .settings import *  # noqa: E402,F403
-DATABASES["default"]["CONN_MAX_AGE"] = 0  # noqa: F405
-DATABASES["default"]["TEST"] = {"NAME": "test_zdb_fase3_" + uuid.uuid4().hex[:12]}  # noqa: F405
+DATABASES = {'default': {
+    'ENGINE': 'django.db.backends.postgresql', 'NAME': 'postgres', 'USER': 'postgres',
+    'PASSWORD': '', 'HOST': '127.0.0.1', 'PORT': str(_puerto), 'CONN_MAX_AGE': 0,
+    'OPTIONS': {'connect_timeout': 5, 'passfile': str(_carpeta / 'pgpass-vacio'), 'sslmode': 'disable'},
+    'TEST': {'NAME': 'test_zdb_fase3_' + uuid.uuid4().hex[:12]},
+}}
+ZDB_ARCHIVOS_PRIVADOS = _carpeta / 'archivos_privados'
+MEDIA_ROOT = _carpeta / 'archivos_privados'
+STATIC_ROOT = _carpeta / 'staticfiles'
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False

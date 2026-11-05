@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
-from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 RAIZ_PROYECTO = BASE_DIR.parent
@@ -11,7 +10,9 @@ RAIZ_PROYECTO = BASE_DIR.parent
 # No constituye un perfil de despliegue autorizado.
 if os.getenv('DJANGO_SETTINGS_MODULE') not in ('configuracion.settings_pruebas','configuracion.settings_pruebas_postgresql'):
     raise ImproperlyConfigured('Integración de Etapa 2 aislada: usa el ejecutor PostgreSQL temporal.')
-load_dotenv(RAIZ_PROYECTO / ".env", override=False)
+if os.getenv('DJANGO_SETTINGS_MODULE') != 'configuracion.settings_pruebas_postgresql':
+    from dotenv import load_dotenv
+    load_dotenv(RAIZ_PROYECTO / ".env", override=False)
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
 if not SECRET_KEY or len(SECRET_KEY) < 50:

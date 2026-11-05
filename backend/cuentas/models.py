@@ -57,3 +57,4 @@ class SolicitudRestablecimiento(models.Model):
     fecha_uso = models.DateTimeField(null=True, blank=True)
 from .modelos_identidad import Persona, EnlaceIdentidad  # noqa: E402,F401
 from .modelos_roles import PertenenciaRol, EventoRol  # noqa: E402,F401
+from .modelos_competencias import CompetenciaEmisora, EventoCompetenciaEmisora  # noqa: E402,F401
