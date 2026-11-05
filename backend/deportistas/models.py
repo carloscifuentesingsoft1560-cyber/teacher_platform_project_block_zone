@@ -184,3 +184,8 @@ class CambioDocumentoDeportista(models.Model):
             models.CheckConstraint(condition=Q(documento_anterior_enmascarado="")|Q(documento_anterior_enmascarado__regex=r"^\*{4}[A-Z0-9/-]{0,4}$"),name="historia_anterior_solo_mascara"),
             models.CheckConstraint(condition=Q(documento_nuevo_enmascarado="")|Q(documento_nuevo_enmascarado__regex=r"^\*{4}[A-Z0-9/-]{0,4}$"),name="historia_nueva_solo_mascara"),
         ]
+
+
+from .modelos_autorizaciones_funcionales import (ExpedienteAutorizacionFuncional,
+    PropuestaDecisionFuncionalVersion, AlcanceDecisionFuncional, CondicionDecisionFuncional,
+    AdaptacionDecisionFuncional, ReferenciaEvidenciaFuncional, EventoExpedienteFuncional)  # noqa: E402,F401
